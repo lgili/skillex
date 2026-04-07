@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
 import { createSkillScaffold } from "../skills/create-skills/scripts/init_repo_skill.js";
 
-test("createSkillScaffold cria a skill e registra no catalogo", async (t) => {
+test("createSkillScaffold cria a skill e registra no catalogo", async (t: TestContext) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-create-skill-"));
   t.after(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -74,7 +74,7 @@ test("catalogo first-party referencia arquivos reais", async () => {
   }
 });
 
-async function fileExists(targetPath) {
+async function fileExists(targetPath: string): Promise<boolean> {
   try {
     await fs.access(targetPath);
     return true;

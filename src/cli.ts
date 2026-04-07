@@ -1,4 +1,4 @@
-import path from "node:path";
+import * as path from "node:path";
 import { listAdapters } from "./adapters.js";
 import { loadCatalog, searchCatalogSkills } from "./catalog.js";
 import {
@@ -10,8 +10,18 @@ import {
   syncInstalledSkills,
   updateInstalledSkills,
 } from "./install.js";
+import type { ParsedArgs, ProjectOptions, SearchOptions } from "./types.js";
+import { CliError } from "./types.js";
 
-export async function main(argv) {
+type CliFlags = Record<string, string | boolean>;
+
+/**
+ * Runs the Skillex CLI entrypoint.
+ *
+ * @param argv - Raw CLI arguments without the Node executable prefix.
+ * @throws {CliError} When the command or flag values are invalid.
+ */
+export async function main(argv: string[]): Promise<void> {
   const { command, positionals, flags } = parseArgs(argv);
 
   switch (command) {
@@ -44,11 +54,11 @@ export async function main(argv) {
       await handleStatus(flags);
       return;
     default:
-      throw new Error(`Comando desconhecido: ${command}`);
+      throw new CliError(`Comando desconhecido: ${command}. Rode "skillex help" para ver os comandos.`);
   }
 }
 
-async function handleInit(flags) {
+async function handleInit(flags: CliFlags): Promise<void> {
   const result = await initProject(commonOptions(flags));
   if (result.created) {
     console.log(`Inicializado em ${result.statePaths.stateDir}`);
@@ -64,7 +74,7 @@ async function handleInit(flags) {
   console.log(`Auto-sync: ${result.lockfile.settings.autoSync ? "enabled" : "disabled"}`);
 }
 
-async function handleList(flags) {
+async function handleList(flags: CliFlags): Promise<void> {
   const catalog = await loadCatalog(await resolveProjectSource(commonOptions(flags)));
   const rows = catalog.skills.map((skill) => ({
     id: skill.id,
@@ -82,13 +92,20 @@ async function handleList(flags) {
   printTable(rows);
 }
 
-async function handleSearch(positionals, flags) {
+async function handleSearch(positionals: string[], flags: CliFlags): Promise<void> {
   const catalog = await loadCatalog(await resolveProjectSource(commonOptions(flags)));
-  const filtered = searchCatalogSkills(catalog.skills, {
+  const searchOptions: SearchOptions = {
     query: positionals.join(" "),
-    compatibility: flags.compatibility,
-    tags: flags.tag,
-  });
+  };
+  const compatibility = asOptionalString(flags.compatibility);
+  const tag = asOptionalString(flags.tag);
+  if (compatibility) {
+    searchOptions.compatibility = compatibility;
+  }
+  if (tag) {
+    searchOptions.tags = tag;
+  }
+  const filtered = searchCatalogSkills(catalog.skills, searchOptions);
 
   if (filtered.length === 0) {
     console.log("Nenhuma skill corresponde aos filtros informados.");
@@ -106,7 +123,7 @@ async function handleSearch(positionals, flags) {
   );
 }
 
-async function handleInstall(positionals, flags) {
+async function handleInstall(positionals: string[], flags: CliFlags): Promise<void> {
   const installAll = Boolean(flags.all);
   const result = await installSkills(positionals, {
     ...commonOptions(flags),
@@ -120,7 +137,7 @@ async function handleInstall(positionals, flags) {
   printAutoSyncResult(result.autoSync);
 }
 
-async function handleUpdate(positionals, flags) {
+async function handleUpdate(positionals: string[], flags: CliFlags): Promise<void> {
   const result = await updateInstalledSkills(positionals, commonOptions(flags));
   if (result.updatedSkills.length === 0) {
     console.log("Nenhuma skill atualizada.");
@@ -137,7 +154,7 @@ async function handleUpdate(positionals, flags) {
   printAutoSyncResult(result.autoSync);
 }
 
-async function handleRemove(positionals, flags) {
+async function handleRemove(positionals: string[], flags: CliFlags): Promise<void> {
   const result = await removeSkills(positionals, commonOptions(flags));
   if (result.removedSkills.length > 0) {
     console.log(`Removidas ${result.removedSkills.length} skill(s) de ${result.statePaths.stateDir}`);
@@ -152,7 +169,7 @@ async function handleRemove(positionals, flags) {
   printAutoSyncResult(result.autoSync);
 }
 
-async function handleSync(flags) {
+async function handleSync(flags: CliFlags): Promise<void> {
   const result = await syncInstalledSkills(commonOptions(flags));
   if (result.dryRun) {
     console.log(`Preview de ${result.skillCount} skill(s) para ${result.sync.adapter}`);
@@ -168,7 +185,7 @@ async function handleSync(flags) {
   }
 }
 
-async function handleStatus(flags) {
+async function handleStatus(flags: CliFlags): Promise<void> {
   const state = await getInstalledSkills(commonOptions(flags));
   if (!state) {
     console.log("Nenhuma instalacao local encontrada. Rode: skillex init");
@@ -199,28 +216,62 @@ async function handleStatus(flags) {
   );
 }
 
-function commonOptions(flags) {
-  return {
-    cwd: path.resolve(flags.cwd || process.cwd()),
-    repo: flags.repo,
-    ref: flags.ref,
-    catalogPath: flags["catalog-path"],
-    catalogUrl: flags["catalog-url"],
-    skillsDir: flags["skills-dir"],
-    agentSkillsDir: flags["agent-skills-dir"],
-    adapter: flags.adapter,
-    autoSync: parseBooleanFlag(flags["auto-sync"]),
-    dryRun: parseBooleanFlag(flags["dry-run"]) || false,
+function commonOptions(flags: CliFlags): ProjectOptions {
+  const options: ProjectOptions = {
+    cwd: path.resolve(asOptionalString(flags.cwd) || process.cwd()),
   };
+
+  const repo = asOptionalString(flags.repo);
+  const ref = asOptionalString(flags.ref);
+  const catalogPath = asOptionalString(flags["catalog-path"]);
+  const catalogUrl = asOptionalString(flags["catalog-url"]);
+  const skillsDir = asOptionalString(flags["skills-dir"]);
+  const agentSkillsDir = asOptionalString(flags["agent-skills-dir"]);
+  const adapter = asOptionalString(flags.adapter);
+  const autoSync = parseBooleanFlag(flags["auto-sync"]);
+  const dryRun = parseBooleanFlag(flags["dry-run"]);
+
+  if (repo) {
+    options.repo = repo;
+  }
+  if (ref) {
+    options.ref = ref;
+  }
+  if (catalogPath) {
+    options.catalogPath = catalogPath;
+  }
+  if (catalogUrl) {
+    options.catalogUrl = catalogUrl;
+  }
+  if (skillsDir) {
+    options.skillsDir = skillsDir;
+  }
+  if (agentSkillsDir) {
+    options.agentSkillsDir = agentSkillsDir;
+  }
+  if (adapter) {
+    options.adapter = adapter;
+  }
+  if (autoSync !== undefined) {
+    options.autoSync = autoSync;
+  }
+  if (dryRun !== undefined) {
+    options.dryRun = dryRun;
+  }
+
+  return options;
 }
 
-function parseArgs(argv) {
-  const flags = {};
-  const positionals = [];
-  let command;
+function parseArgs(argv: string[]): ParsedArgs {
+  const flags: CliFlags = {};
+  const positionals: string[] = [];
+  let command: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === undefined) {
+      continue;
+    }
     if (!command && !token.startsWith("-")) {
       command = token;
       continue;
@@ -228,6 +279,9 @@ function parseArgs(argv) {
 
     if (token.startsWith("--")) {
       const [rawKey, inlineValue] = token.slice(2).split("=", 2);
+      if (!rawKey) {
+        continue;
+      }
       if (inlineValue !== undefined) {
         flags[rawKey] = inlineValue;
         continue;
@@ -254,7 +308,7 @@ function parseArgs(argv) {
   };
 }
 
-function printHelp() {
+function printHelp(): void {
   console.log(`skillex
 
 Comandos:
@@ -285,31 +339,31 @@ Flags:
 `);
 }
 
-function printTable(rows) {
-  const columns = Object.keys(rows[0]);
-  const widths = columns.map((column) =>
+function printTable(rows: Array<Record<string, string | number | boolean | null | undefined>>): void {
+  const columns = Object.keys(rows[0]!);
+  const widths: number[] = columns.map((column) =>
     Math.max(column.length, ...rows.map((row) => String(row[column] ?? "").length)),
   );
 
-  console.log(columns.map((column, index) => column.padEnd(widths[index])).join("  "));
+  console.log(columns.map((column, index) => column.padEnd(widths[index] ?? 0)).join("  "));
   console.log(widths.map((size) => "-".repeat(size)).join("  "));
   for (const row of rows) {
     console.log(
       columns
-        .map((column, index) => String(row[column] ?? "").padEnd(widths[index]))
+        .map((column, index) => String(row[column] ?? "").padEnd(widths[index] ?? 0))
         .join("  "),
     );
   }
 }
 
-function truncate(value, maxLength) {
+function truncate(value: string, maxLength: number): string {
   if (!value || value.length <= maxLength) {
     return value;
   }
   return `${value.slice(0, maxLength - 3)}...`;
 }
 
-function parseBooleanFlag(value) {
+function parseBooleanFlag(value: string | boolean | undefined): boolean | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -326,14 +380,22 @@ function parseBooleanFlag(value) {
     return false;
   }
 
-  throw new Error(`Valor booleano invalido: ${value}`);
+  throw new CliError(`Valor booleano invalido: ${value}`, "INVALID_BOOLEAN_FLAG");
 }
 
-function printAutoSyncResult(result) {
+function printAutoSyncResult(
+  result: Awaited<ReturnType<typeof installSkills>>["autoSync"] |
+    Awaited<ReturnType<typeof updateInstalledSkills>>["autoSync"] |
+    Awaited<ReturnType<typeof removeSkills>>["autoSync"],
+): void {
   if (!result) {
     return;
   }
 
   const suffix = result.changed ? "" : " (sem alteracoes)";
   console.log(`Auto-sync: ${result.sync.adapter} -> ${result.sync.targetPath}${suffix}`);
+}
+
+function asOptionalString(value: string | boolean | undefined): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }

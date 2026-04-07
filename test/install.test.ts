@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
 import { ensureDir, pathExists, writeJson, writeText } from "../src/fs.js";
@@ -12,9 +12,11 @@ import {
   removeSkills,
   updateInstalledSkills,
 } from "../src/install.js";
+import type { CatalogData } from "../src/types.js";
 
-function createCatalog(version) {
+function createCatalog(version: string): CatalogData {
   return {
+    formatVersion: 1,
     repo: "example/skills",
     ref: "main",
     skills: [
@@ -34,7 +36,11 @@ function createCatalog(version) {
   };
 }
 
-async function fakeDownloader(skill, catalog, stateDir) {
+async function fakeDownloader(
+  skill: { id: string; name: string; version: string },
+  catalog: { repo: string },
+  stateDir: string,
+): Promise<void> {
   const skillDir = path.join(stateDir, skill.id);
   await ensureDir(path.join(skillDir, "tools"));
   await writeText(path.join(skillDir, "SKILL.md"), `# ${skill.name} ${skill.version}\n`);
@@ -45,7 +51,7 @@ async function fakeDownloader(skill, catalog, stateDir) {
   });
 }
 
-test("install, update e remove manipulam o lockfile local", async (t) => {
+test("install, update e remove manipulam o lockfile local", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-install-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -68,8 +74,9 @@ test("install, update e remove manipulam o lockfile local", async (t) => {
   });
 
   let state = await getInstalledSkills({ cwd });
+  assert.ok(state);
   assert.equal(state.adapters.active, "codex");
-  assert.equal(state.installed["git-master"].version, "1.0.0");
+  assert.equal(state.installed["git-master"]!.version, "1.0.0");
   assert.equal(await pathExists(path.join(cwd, ".agent-skills", "git-master", "SKILL.md")), true);
 
   const catalogV2 = createCatalog("2.0.0");
@@ -84,7 +91,8 @@ test("install, update e remove manipulam o lockfile local", async (t) => {
   assert.deepEqual(updateResult.missingFromCatalog, []);
 
   state = await getInstalledSkills({ cwd });
-  assert.equal(state.installed["git-master"].version, "2.0.0");
+  assert.ok(state);
+  assert.equal(state.installed["git-master"]!.version, "2.0.0");
 
   const removeResult = await removeSkills(["git-master"], {
     cwd,
@@ -95,11 +103,12 @@ test("install, update e remove manipulam o lockfile local", async (t) => {
   assert.deepEqual(removeResult.missingSkills, []);
 
   state = await getInstalledSkills({ cwd });
+  assert.ok(state);
   assert.deepEqual(state.installed, {});
   assert.equal(await pathExists(path.join(cwd, ".agent-skills", "git-master")), false);
 });
 
-test("updateInstalledSkills reporta skill ausente no catalogo remoto", async (t) => {
+test("updateInstalledSkills reporta skill ausente no catalogo remoto", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-update-missing-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -121,6 +130,7 @@ test("updateInstalledSkills reporta skill ausente no catalogo remoto", async (t)
   const result = await updateInstalledSkills([], {
     cwd,
     catalogLoader: async () => ({
+      formatVersion: 1,
       repo: "example/skills",
       ref: "main",
       skills: [],

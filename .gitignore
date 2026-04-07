@@ -1,2 +1,4 @@
 node_modules/
 .agent-skills/
+dist/
+.test-dist/

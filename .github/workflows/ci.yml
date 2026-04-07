@@ -26,8 +26,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Run tests
         run: npm test
 
       - name: Validate package contents
-        run: npm pack --dry-run
+        run: npm run build && npm pack --dry-run

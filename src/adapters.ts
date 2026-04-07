@@ -1,7 +1,9 @@
-import path from "node:path";
+import * as path from "node:path";
 import { pathExists } from "./fs.js";
+import type { AdapterConfig, AdapterState } from "./types.js";
+import { AdapterNotFoundError } from "./types.js";
 
-const ADAPTERS = [
+const ADAPTERS: AdapterConfig[] = [
   {
     id: "codex",
     label: "OpenAI Codex",
@@ -78,7 +80,7 @@ const ADAPTERS = [
   },
 ];
 
-const ADAPTER_INDEX = new Map(ADAPTERS.map((adapter, index) => [adapter.id, index]));
+const ADAPTER_INDEX = new Map<string, number>(ADAPTERS.map((adapter, index) => [adapter.id, index]));
 const ADAPTER_ALIASES = new Map([
   ["github-copilot", "copilot"],
   ["roo", "cline"],
@@ -89,18 +91,34 @@ const ADAPTER_ALIASES = new Map([
   ["codeium-windsurf", "windsurf"],
 ]);
 
-export function listAdapters() {
+/**
+ * Lists supported adapters for CLI help and UI display.
+ *
+ * @returns Lightweight adapter descriptors.
+ */
+export function listAdapters(): Array<Pick<AdapterConfig, "id" | "label">> {
   return ADAPTERS.map((adapter) => ({
     id: adapter.id,
     label: adapter.label,
   }));
 }
 
-export function listAdapterIds() {
+/**
+ * Lists canonical adapter identifiers.
+ *
+ * @returns Supported adapter ids.
+ */
+export function listAdapterIds(): string[] {
   return ADAPTERS.map((adapter) => adapter.id);
 }
 
-export function normalizeAdapterId(adapterId) {
+/**
+ * Normalizes adapter aliases to canonical adapter identifiers.
+ *
+ * @param adapterId - User-supplied adapter identifier.
+ * @returns Canonical adapter id or `null` when empty.
+ */
+export function normalizeAdapterId(adapterId: string | null | undefined): string | null {
   if (adapterId === undefined || adapterId === null) {
     return null;
   }
@@ -113,13 +131,19 @@ export function normalizeAdapterId(adapterId) {
   return ADAPTER_ALIASES.get(normalized) || normalized;
 }
 
-export function normalizeAdapterList(values) {
+/**
+ * Normalizes a list of adapter identifiers or aliases.
+ *
+ * @param values - Adapter values as a list or comma-separated string.
+ * @returns Canonical adapter ids without duplicates.
+ */
+export function normalizeAdapterList(values: string[] | string | null | undefined): string[] {
   if (!values) {
     return [];
   }
 
   const items = Array.isArray(values) ? values : String(values).split(",");
-  const normalized = [];
+  const normalized: string[] = [];
 
   for (const item of items) {
     const canonical = normalizeAdapterId(item);
@@ -132,16 +156,39 @@ export function normalizeAdapterList(values) {
   return normalized;
 }
 
-export function isKnownAdapter(adapterId) {
+/**
+ * Checks whether an adapter id or alias maps to a supported adapter.
+ *
+ * @param adapterId - Adapter identifier to check.
+ * @returns `true` when the adapter is known.
+ */
+export function isKnownAdapter(adapterId: string | null | undefined): boolean {
   return ADAPTERS.some((adapter) => adapter.id === normalizeAdapterId(adapterId));
 }
 
-export function getAdapter(adapterId) {
-  return ADAPTERS.find((adapter) => adapter.id === normalizeAdapterId(adapterId)) || null;
+/**
+ * Resolves a canonical adapter configuration by id or alias.
+ *
+ * @param adapterId - Adapter identifier to resolve.
+ * @returns Adapter configuration.
+ * @throws {AdapterNotFoundError} When the adapter is unknown.
+ */
+export function getAdapter(adapterId: string): AdapterConfig {
+  const adapter = ADAPTERS.find((candidate) => candidate.id === normalizeAdapterId(adapterId)) || null;
+  if (!adapter) {
+    throw new AdapterNotFoundError(String(adapterId));
+  }
+  return adapter;
 }
 
-export async function detectAdapters(cwd) {
-  const detected = [];
+/**
+ * Detects supported adapters present in a workspace and orders them by specificity.
+ *
+ * @param cwd - Workspace root.
+ * @returns Ordered list of detected adapter ids.
+ */
+export async function detectAdapters(cwd: string): Promise<string[]> {
+  const detected: Array<{ id: string; score: number; index: number }> = [];
 
   for (const adapter of ADAPTERS) {
     const score = await adapterScore(cwd, adapter);
@@ -154,11 +201,20 @@ export async function detectAdapters(cwd) {
   return detected.map((adapter) => adapter.id);
 }
 
-export async function resolveAdapterState(options = {}) {
+/**
+ * Resolves the active adapter state for a workspace.
+ *
+ * @param options - Resolution options including cwd and optional adapter override.
+ * @returns Active and detected adapter ids.
+ * @throws {AdapterNotFoundError} When the explicit override is unknown.
+ */
+export async function resolveAdapterState(
+  options: { cwd?: string | undefined; adapter?: string | undefined } = {},
+): Promise<AdapterState> {
   const cwd = options.cwd || process.cwd();
   const preferred = normalizeAdapterId(options.adapter);
   if (preferred && !isKnownAdapter(preferred)) {
-    throw new Error(`Adapter desconhecido: ${preferred}`);
+    throw new AdapterNotFoundError(preferred);
   }
 
   const detected = await detectAdapters(cwd);
@@ -168,7 +224,7 @@ export async function resolveAdapterState(options = {}) {
   };
 }
 
-async function adapterScore(cwd, adapter) {
+async function adapterScore(cwd: string, adapter: AdapterConfig): Promise<number> {
   let score = 0;
 
   for (const marker of adapter.markers) {

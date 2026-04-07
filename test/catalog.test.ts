@@ -7,6 +7,7 @@ import {
   resolveSource,
   searchCatalogSkills,
 } from "../src/catalog.js";
+import type { SkillManifest } from "../src/types.js";
 
 test("parseGitHubRepo aceita owner/repo", () => {
   assert.deepEqual(parseGitHubRepo("openai/skills"), {
@@ -43,22 +44,30 @@ test("resolveSource usa defaults previsiveis", () => {
 });
 
 test("searchCatalogSkills filtra por texto e compatibilidade", () => {
-  const skills = [
+  const skills: SkillManifest[] = [
     {
       id: "git-master",
       name: "Git Master",
       version: "1.0.0",
       description: "Fluxo semantico para git",
+      author: null,
       tags: ["git", "workflow"],
       compatibility: ["codex", "copilot"],
+      entry: "SKILL.md",
+      path: "skills/git-master",
+      files: ["SKILL.md"],
     },
     {
       id: "pdf-toolkit",
       name: "PDF Toolkit",
       version: "1.0.0",
       description: "Manipula pdfs",
+      author: null,
       tags: ["pdf"],
       compatibility: ["cline"],
+      entry: "SKILL.md",
+      path: "skills/pdf-toolkit",
+      files: ["SKILL.md"],
     },
   ];
 
@@ -68,26 +77,34 @@ test("searchCatalogSkills filtra por texto e compatibilidade", () => {
   });
 
   assert.equal(results.length, 1);
-  assert.equal(results[0].id, "git-master");
+  assert.equal(results[0]!.id, "git-master");
 });
 
 test("searchCatalogSkills normaliza aliases de compatibilidade", () => {
-  const skills = [
+  const skills: SkillManifest[] = [
     {
       id: "reviewer",
       name: "Reviewer",
       version: "1.0.0",
       description: "Review de codigo",
+      author: null,
       tags: ["review"],
       compatibility: ["claude"],
+      entry: "SKILL.md",
+      path: "skills/reviewer",
+      files: ["SKILL.md"],
     },
     {
       id: "issue-helper",
       name: "Issue Helper",
       version: "1.0.0",
       description: "Ajuda com issues",
+      author: null,
       tags: ["issues"],
       compatibility: ["gemini-cli"],
+      entry: "SKILL.md",
+      path: "skills/issue-helper",
+      files: ["SKILL.md"],
     },
   ];
 
@@ -95,11 +112,11 @@ test("searchCatalogSkills normaliza aliases de compatibilidade", () => {
     compatibility: "claude-code",
   });
   assert.equal(claudeResults.length, 1);
-  assert.equal(claudeResults[0].id, "reviewer");
+  assert.equal(claudeResults[0]!.id, "reviewer");
 
   const geminiResults = searchCatalogSkills(skills, {
     compatibility: "gemini",
   });
   assert.equal(geminiResults.length, 1);
-  assert.equal(geminiResults[0].id, "issue-helper");
+  assert.equal(geminiResults[0]!.id, "issue-helper");
 });

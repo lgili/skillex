@@ -1,13 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
 import { detectAdapters, resolveAdapterState } from "../src/adapters.js";
 import { initProject } from "../src/install.js";
 
-test("detectAdapters encontra adapters por marcadores do workspace", async (t) => {
+test("detectAdapters encontra adapters por marcadores do workspace", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-adapters-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -22,7 +22,7 @@ test("detectAdapters encontra adapters por marcadores do workspace", async (t) =
   assert.deepEqual(detected, ["cursor", "copilot", "codex"]);
 });
 
-test("detectAdapters prioriza markers especificos sobre arquivos compartilhados", async (t) => {
+test("detectAdapters prioriza markers especificos sobre arquivos compartilhados", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-adapters-priority-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -35,7 +35,7 @@ test("detectAdapters prioriza markers especificos sobre arquivos compartilhados"
   assert.deepEqual(detected, ["windsurf", "codex"]);
 });
 
-test("resolveAdapterState respeita override explicito", async (t) => {
+test("resolveAdapterState respeita override explicito", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-adapter-override-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -48,7 +48,7 @@ test("resolveAdapterState respeita override explicito", async (t) => {
   assert.deepEqual(adapterState.detected, ["codex"]);
 });
 
-test("initProject persiste adapter ativo e detectados", async (t) => {
+test("initProject persiste adapter ativo e detectados", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-init-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });

@@ -1,0 +1,50 @@
+# catalog Specification
+
+## Purpose
+TBD - created by archiving change refactor-typescript-migration. Update Purpose after archive.
+## Requirements
+### Requirement: Typed Skill Manifest
+Every skill retrieved from a catalog SHALL conform to the `SkillManifest` interface with required fields: `id: string`, `name: string`, `description: string`, `version: string`, `author: string | null`, `compatibility: string[]`, `entry: string`, `path: string`, and `files: string[]`.
+
+#### Scenario: Catalog load returns typed skills
+- **WHEN** `loadCatalog()` resolves
+- **THEN** every skill in the returned catalog satisfies `SkillManifest`
+
+#### Scenario: Malformed entry throws CatalogError
+- **WHEN** a catalog entry is missing a required field such as `id`
+- **THEN** `loadCatalog()` throws a `CatalogError` whose message identifies the malformed entry
+- **AND** the error is not a generic `Error`
+
+### Requirement: Typed Catalog Source
+`resolveSource()` SHALL return a `CatalogSource` interface with typed fields `owner: string`, `repoName: string`, `repo: string`, `ref: string`, `catalogPath: string`, `skillsDir: string`, and `catalogUrl: string | null`.
+
+#### Scenario: Source resolves with correct types
+- **WHEN** a valid `"owner/repo"` string is passed to `resolveSource()`
+- **THEN** the resolved object satisfies `CatalogSource`
+
+#### Scenario: GitHub URL resolves with correct types
+- **WHEN** a full GitHub URL is passed to `resolveSource()`
+- **THEN** the resolved object satisfies `CatalogSource` with `owner` and `repo` extracted correctly
+
+### Requirement: Typed Search Options
+`searchCatalogSkills()` SHALL accept a `SearchOptions` typed parameter with optional `query?: string`, `compatibility?: string[] | string`, and `tags?: string[] | string` fields, and return `SkillManifest[]`.
+
+#### Scenario: Typed compatibility filter returns matching skills
+- **WHEN** `searchCatalogSkills(skills, { compatibility: ["claude"] })` is called
+- **THEN** only skills whose `compatibility` array includes `"claude"` are returned
+- **AND** TypeScript compilation rejects `SearchOptions` objects with undeclared fields
+
+### Requirement: Catalog Load Error Handling
+`loadCatalog()` SHALL throw a `CatalogError` with a descriptive message when the remote catalog is unreachable, returns a non-200 status, or contains malformed JSON.
+
+#### Scenario: Network failure throws CatalogError
+- **WHEN** the GitHub API request fails with a network error
+- **THEN** `loadCatalog()` throws a `CatalogError` whose `message` describes the failure
+
+### Requirement: TSDoc on Catalog Exports
+Every exported function in `src/catalog.ts` SHALL have a TSDoc comment describing parameters, return type, and thrown errors.
+
+#### Scenario: IDE shows documentation on hover
+- **WHEN** a developer hovers over `loadCatalog` in a TypeScript-aware editor
+- **THEN** the editor displays the TSDoc description and return type
+

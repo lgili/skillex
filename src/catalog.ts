@@ -6,21 +6,76 @@ import {
 } from "./config.js";
 import { normalizeAdapterList } from "./adapters.js";
 import { assertSafeRelativePath } from "./fs.js";
-import { fetchJson, fetchOptionalJson } from "./http.js";
+import { fetchJson, fetchOptionalJson, fetchText } from "./http.js";
+import type {
+  CatalogData,
+  CatalogSource,
+  CatalogSourceInput,
+  ParsedGitHubRepo,
+  SearchOptions,
+  SkillManifest,
+} from "./types.js";
+import { CatalogError } from "./types.js";
 
-export async function loadCatalog(options = {}) {
-  const source = resolveSource(options);
-  const catalogUrl = source.catalogUrl || buildRawGitHubUrl(source.repo, source.ref, source.catalogPath);
-  const remoteCatalog = await fetchOptionalJson(catalogUrl);
-
-  if (remoteCatalog) {
-    return normalizeCatalog(remoteCatalog, source);
-  }
-
-  return loadCatalogFromTree(source);
+interface GitTreeItem {
+  path: string;
+  type: string;
 }
 
-export function resolveSource(options = {}) {
+interface GitTreeResponse {
+  tree?: GitTreeItem[];
+}
+
+type RemoteCatalog = Partial<CatalogData> & { skills?: Array<Partial<SkillManifest>> };
+interface SkillCandidate {
+  id?: string | undefined;
+  slug?: string | undefined;
+  path?: string | undefined;
+  name?: string | undefined;
+  version?: string | undefined;
+  description?: string | undefined;
+  author?: string | null | undefined;
+  tags?: string[] | undefined;
+  compatibility?: string[] | undefined;
+  entry?: string | undefined;
+  files?: string[] | undefined;
+}
+
+/**
+ * Loads a remote skill catalog from `catalog.json` or falls back to repository tree inspection.
+ *
+ * @param options - Catalog source overrides.
+ * @returns Normalized remote catalog data.
+ * @throws {CatalogError} When the catalog cannot be fetched or normalized.
+ */
+export async function loadCatalog(options: CatalogSourceInput = {}): Promise<CatalogData> {
+  try {
+    const source = resolveSource(options);
+    const catalogUrl = source.catalogUrl || buildRawGitHubUrl(source.repo, source.ref, source.catalogPath);
+    const remoteCatalog = await fetchOptionalJson<RemoteCatalog>(catalogUrl);
+
+    if (remoteCatalog) {
+      return normalizeCatalog(remoteCatalog, source);
+    }
+
+    return await loadCatalogFromTree(source);
+  } catch (error) {
+    if (error instanceof CatalogError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CatalogError(`Falha ao carregar catalogo: ${message}`);
+  }
+}
+
+/**
+ * Resolves the effective GitHub catalog source from CLI options.
+ *
+ * @param options - Catalog source overrides.
+ * @returns Normalized catalog source.
+ * @throws {CatalogError} When the repository reference is invalid.
+ */
+export function resolveSource(options: CatalogSourceInput = {}): CatalogSource {
   const repoParts = parseGitHubRepo(options.repo || DEFAULT_REPO);
   return {
     owner: repoParts.owner,
@@ -33,24 +88,31 @@ export function resolveSource(options = {}) {
   };
 }
 
-export function parseGitHubRepo(input) {
+/**
+ * Parses a GitHub repository reference in `owner/repo` or GitHub URL format.
+ *
+ * @param input - Repository reference to parse.
+ * @returns Parsed GitHub repository parts.
+ * @throws {CatalogError} When the input cannot be parsed.
+ */
+export function parseGitHubRepo(input: string): ParsedGitHubRepo {
   if (!input || !input.trim()) {
-    throw new Error("Informe um repositorio GitHub no formato owner/repo ou uma URL do GitHub.");
+    throw new CatalogError("Informe um repositorio GitHub no formato owner/repo ou uma URL do GitHub.", "INVALID_REPOSITORY");
   }
 
   const trimmed = input.trim();
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     const url = new URL(trimmed);
     if (url.hostname !== "github.com") {
-      throw new Error("Apenas URLs do github.com sao suportadas nesta versao.");
+      throw new CatalogError("Apenas URLs do github.com sao suportadas nesta versao.", "INVALID_REPOSITORY");
     }
 
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts.length < 2) {
-      throw new Error(`Nao foi possivel extrair owner/repo de "${trimmed}".`);
+      throw new CatalogError(`Nao foi possivel extrair owner/repo de "${trimmed}".`, "INVALID_REPOSITORY");
     }
 
-    const result = { owner: parts[0], repo: parts[1], ref: null };
+    const result: ParsedGitHubRepo = { owner: parts[0]!, repo: parts[1]!, ref: null };
     if (parts[2] === "tree" && parts[3]) {
       result.ref = parts.slice(3).join("/");
     }
@@ -59,22 +121,37 @@ export function parseGitHubRepo(input) {
 
   const parts = trimmed.split("/");
   if (parts.length !== 2) {
-    throw new Error(`Repositorio invalido "${trimmed}". Use owner/repo.`);
+    throw new CatalogError(`Repositorio invalido "${trimmed}". Use owner/repo.`, "INVALID_REPOSITORY");
   }
 
-  return { owner: parts[0], repo: parts[1], ref: null };
+  return { owner: parts[0]!, repo: parts[1]!, ref: null };
 }
 
-export function buildRawGitHubUrl(repo, ref, filePath) {
+/**
+ * Builds a raw GitHub content URL for a repository file.
+ *
+ * @param repo - Repository in `owner/name` format.
+ * @param ref - Branch, tag, or commit.
+ * @param filePath - Repository-relative file path.
+ * @returns Raw GitHub content URL.
+ */
+export function buildRawGitHubUrl(repo: string, ref: string, filePath: string): string {
   return `https://raw.githubusercontent.com/${repo}/${encodeRef(ref)}/${stripLeadingSlash(filePath)}`;
 }
 
-export function buildGitHubApiUrl(repo, ref) {
+/**
+ * Builds the GitHub tree API URL for a repository reference.
+ *
+ * @param repo - Repository in `owner/name` format.
+ * @param ref - Branch, tag, or commit.
+ * @returns GitHub API URL for recursive tree inspection.
+ */
+export function buildGitHubApiUrl(repo: string, ref: string): string {
   return `https://api.github.com/repos/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`;
 }
 
-async function loadCatalogFromTree(source) {
-  const tree = await fetchJson(buildGitHubApiUrl(source.repo, source.ref));
+async function loadCatalogFromTree(source: CatalogSource): Promise<CatalogData> {
+  const tree = await fetchJson<GitTreeResponse>(buildGitHubApiUrl(source.repo, source.ref));
   const files = Array.isArray(tree.tree) ? tree.tree : [];
   const manifests = files.filter((item) => {
     if (item.type !== "blob") {
@@ -86,7 +163,7 @@ async function loadCatalogFromTree(source) {
   if (manifests.length > 0) {
     const skills = await Promise.all(
       manifests.map(async (manifest) => {
-        const manifestJson = await fetchJson(
+        const manifestJson = await fetchJson<Partial<SkillManifest>>(
           buildRawGitHubUrl(source.repo, source.ref, manifest.path),
           { headers: { Accept: "application/json" } },
         );
@@ -123,8 +200,9 @@ async function loadCatalogFromTree(source) {
   });
 
   if (skillFiles.length === 0) {
-    throw new Error(
+    throw new CatalogError(
       `Nenhum catalogo encontrado em ${source.repo}@${source.ref}. Esperado: ${source.catalogPath}, manifests em ${source.skillsDir}/*/skill.json ou pastas com SKILL.md.`,
+      "CATALOG_NOT_FOUND",
     );
   }
 
@@ -156,51 +234,53 @@ async function loadCatalogFromTree(source) {
   };
 }
 
-async function fetchJsonLikeText(url) {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "text/plain",
-      "User-Agent": "skillex",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Falha ao baixar arquivo ${url} (${response.status})`);
-  }
-  return response.text();
+async function fetchJsonLikeText(url: string): Promise<string> {
+  return fetchText(url, { headers: { Accept: "text/plain" } });
 }
 
-function extractSkillMetadata(content) {
+function extractSkillMetadata(content: string): { name?: string; description?: string } {
   const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!match) {
     return {};
   }
 
   const frontmatter = match[1];
+  if (frontmatter === undefined) {
+    return {};
+  }
+
+  const name = extractFrontmatterValue(frontmatter, "name");
+  const description = extractFrontmatterValue(frontmatter, "description");
+
   return {
-    name: extractFrontmatterValue(frontmatter, "name"),
-    description: extractFrontmatterValue(frontmatter, "description"),
+    ...(name !== null ? { name } : {}),
+    ...(description !== null ? { description } : {}),
   };
 }
 
-function extractFrontmatterValue(frontmatter, key) {
+function extractFrontmatterValue(frontmatter: string, key: string): string | null {
   const expression = new RegExp(`^${key}:\\s*(.+)$`, "m");
   const match = frontmatter.match(expression);
   if (!match) {
     return null;
   }
-  return match[1].trim().replace(/^["']|["']$/g, "");
+  const value = match[1];
+  if (value === undefined) {
+    return null;
+  }
+  return value.trim().replace(/^["']|["']$/g, "");
 }
 
-function collectFilesUnderPath(treeFiles, skillPath) {
+function collectFilesUnderPath(treeFiles: GitTreeItem[], skillPath: string): string[] {
   return treeFiles
     .filter((item) => item.type === "blob" && item.path.startsWith(`${skillPath}/`))
     .map((item) => assertSafeRelativePath(item.path.slice(skillPath.length + 1)));
 }
 
-function normalizeCatalog(remoteCatalog, source) {
+function normalizeCatalog(remoteCatalog: RemoteCatalog, source: CatalogSource): CatalogData {
   const remoteSkills = Array.isArray(remoteCatalog.skills) ? remoteCatalog.skills : [];
   if (remoteSkills.length === 0) {
-    throw new Error("catalog.json encontrado, mas sem a chave skills preenchida.");
+    throw new CatalogError("catalog.json encontrado, mas sem a chave skills preenchida.", "CATALOG_EMPTY");
   }
 
   return {
@@ -211,10 +291,10 @@ function normalizeCatalog(remoteCatalog, source) {
   };
 }
 
-function normalizeSkill(skill, source) {
+function normalizeSkill(skill: SkillCandidate, source: CatalogSource): SkillManifest {
   const id = skill.id || skill.slug;
   if (!id) {
-    throw new Error("Toda skill precisa de um id.");
+    throw new CatalogError("Toda skill precisa de um id.", "MALFORMED_SKILL");
   }
 
   const skillPath = skill.path || `${source.skillsDir}/${id}`;
@@ -235,7 +315,14 @@ function normalizeSkill(skill, source) {
   };
 }
 
-export function searchCatalogSkills(skills, options = {}) {
+/**
+ * Filters a list of skills using text, compatibility, and tag criteria.
+ *
+ * @param skills - Skills to search.
+ * @param options - Search filters.
+ * @returns Matching skills ordered by id.
+ */
+export function searchCatalogSkills(skills: SkillManifest[], options: SearchOptions = {}): SkillManifest[] {
   const query = String(options.query || "").trim().toLowerCase();
   const compatibility = normalizeAdapterList(options.compatibility);
   const tags = normalizeFilterList(options.tags);
@@ -276,18 +363,18 @@ export function searchCatalogSkills(skills, options = {}) {
   );
 }
 
-function stripLeadingSlash(value) {
+function stripLeadingSlash(value: string): string {
   return value.replace(/^\/+/, "");
 }
 
-function encodeRef(ref) {
+function encodeRef(ref: string): string {
   return ref
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
 }
 
-function normalizeFilterList(value) {
+function normalizeFilterList(value: string[] | string | null | undefined): string[] {
   if (!value) {
     return [];
   }
@@ -296,6 +383,6 @@ function normalizeFilterList(value) {
   return [...new Set(items.map((item) => item.trim().toLowerCase()).filter(Boolean))];
 }
 
-function sortSkills(skills) {
+function sortSkills(skills: SkillManifest[]): SkillManifest[] {
   return [...skills].sort((left, right) => left.id.localeCompare(right.id));
 }

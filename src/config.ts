@@ -1,4 +1,5 @@
-import path from "node:path";
+import * as path from "node:path";
+import type { StatePaths } from "./types.js";
 
 export const DEFAULT_AGENT_SKILLS_DIR = ".agent-skills";
 export const DEFAULT_LOCKFILE = "skills.json";
@@ -7,7 +8,14 @@ export const DEFAULT_SKILLS_DIR = "skills";
 export const DEFAULT_REPO = "owner/repo";
 export const DEFAULT_REF = "main";
 
-export function getStatePaths(cwd, baseDir = DEFAULT_AGENT_SKILLS_DIR) {
+/**
+ * Resolves the managed workspace state paths used by Skillex.
+ *
+ * @param cwd - Workspace root.
+ * @param baseDir - Managed local state directory.
+ * @returns Absolute paths for the state directory and lockfile.
+ */
+export function getStatePaths(cwd: string, baseDir = DEFAULT_AGENT_SKILLS_DIR): StatePaths {
   const stateDir = path.resolve(cwd, baseDir);
   return {
     stateDir,

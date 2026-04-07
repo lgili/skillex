@@ -16,16 +16,58 @@
   },
   "files": [
     "bin",
-    "src",
+    "dist",
     "README.md"
   ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./adapters": {
+      "types": "./dist/adapters.d.ts",
+      "import": "./dist/adapters.js"
+    },
+    "./catalog": {
+      "types": "./dist/catalog.d.ts",
+      "import": "./dist/catalog.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./fs": {
+      "types": "./dist/fs.d.ts",
+      "import": "./dist/fs.js"
+    },
+    "./http": {
+      "types": "./dist/http.d.ts",
+      "import": "./dist/http.js"
+    },
+    "./install": {
+      "types": "./dist/install.d.ts",
+      "import": "./dist/install.js"
+    },
+    "./sync": {
+      "types": "./dist/sync.d.ts",
+      "import": "./dist/sync.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
+  },
   "bin": {
     "skillex": "bin/skillex.js"
   },
   "scripts": {
-    "start": "node ./bin/skillex.js",
-    "test": "node --test",
-    "prepublishOnly": "npm test"
+    "build": "tsc -p tsconfig.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "npm run build && node ./bin/skillex.js",
+    "test": "npm run build:test && node --test .test-dist/test/*.test.js",
+    "prepublishOnly": "npm run build && npm test"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -39,5 +81,9 @@
     "copilot",
     "cursor"
   ],
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "^5.9.3"
+  },
   "license": "MIT"
 }

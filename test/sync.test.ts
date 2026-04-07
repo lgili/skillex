@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
 import { pathExists, writeJson, writeText } from "../src/fs.js";
@@ -13,8 +13,13 @@ import {
   syncInstalledSkills,
   updateInstalledSkills,
 } from "../src/install.js";
+import type { CatalogData, LockfileState } from "../src/types.js";
 
-async function fakeDownloader(skill, catalog, stateDir) {
+async function fakeDownloader(
+  skill: { id: string; name: string; version: string },
+  catalog: { repo: string },
+  stateDir: string,
+): Promise<void> {
   const skillDir = path.join(stateDir, skill.id);
   await fs.mkdir(path.join(skillDir, "tools"), { recursive: true });
   await writeText(
@@ -39,8 +44,9 @@ async function fakeDownloader(skill, catalog, stateDir) {
   });
 }
 
-function createCatalog() {
+function createCatalog(): CatalogData {
   return {
+    formatVersion: 1,
     repo: "example/skills",
     ref: "main",
     skills: [
@@ -60,7 +66,7 @@ function createCatalog() {
   };
 }
 
-async function setupInstalledSkill(cwd, options = {}) {
+async function setupInstalledSkill(cwd: string, options: { adapter?: string } = {}) {
   await initProject({
     cwd,
     repo: "example/skills",
@@ -76,7 +82,12 @@ async function setupInstalledSkill(cwd, options = {}) {
   });
 }
 
-test("syncInstalledSkills preserva conteudo manual em AGENTS.md", async (t) => {
+function assertState(state: LockfileState | null): LockfileState {
+  assert.ok(state);
+  return state;
+}
+
+test("syncInstalledSkills preserva conteudo manual em AGENTS.md", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-codex-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -119,13 +130,14 @@ test("syncInstalledSkills preserva conteudo manual em AGENTS.md", async (t) => {
   assert.doesNotMatch(content, /^description:/m);
   assert.doesNotMatch(content, /^# Git Master$/m);
 
-  const state = await getInstalledSkills({ cwd });
+  const state = assertState(await getInstalledSkills({ cwd }));
   assert.equal(state.adapters.active, "codex");
+  assert.ok(state.sync);
   assert.equal(state.sync.adapter, "codex");
   assert.equal(state.sync.targetPath, "AGENTS.md");
 });
 
-test("syncInstalledSkills preserva conteudo manual em copilot-instructions", async (t) => {
+test("syncInstalledSkills preserva conteudo manual em copilot-instructions", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-copilot-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -157,7 +169,7 @@ test("syncInstalledSkills preserva conteudo manual em copilot-instructions", asy
   assert.match(content, /<!-- SKILLEX:START -->/);
 });
 
-test("syncInstalledSkills preserva conteudo manual em CLAUDE.md", async (t) => {
+test("syncInstalledSkills preserva conteudo manual em CLAUDE.md", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-claude-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -188,7 +200,7 @@ test("syncInstalledSkills preserva conteudo manual em CLAUDE.md", async (t) => {
   assert.match(content, /<!-- SKILLEX:START -->/);
 });
 
-test("syncInstalledSkills preserva conteudo manual em GEMINI.md", async (t) => {
+test("syncInstalledSkills preserva conteudo manual em GEMINI.md", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-gemini-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -219,7 +231,7 @@ test("syncInstalledSkills preserva conteudo manual em GEMINI.md", async (t) => {
   assert.match(content, /<!-- SKILLEX:START -->/);
 });
 
-test("syncInstalledSkills escreve arquivo dedicado para cline", async (t) => {
+test("syncInstalledSkills escreve arquivo dedicado para cline", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-cline-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -244,12 +256,13 @@ test("syncInstalledSkills escreve arquivo dedicado para cline", async (t) => {
   assert.match(content, /## Skillex Managed Skills/);
   assert.match(content, /### Git Master \(`git-master@1\.0\.0`\)/);
 
-  const state = await getInstalledSkills({ cwd });
+  const state = assertState(await getInstalledSkills({ cwd }));
   assert.equal(state.adapters.active, "codex");
+  assert.ok(state.sync);
   assert.equal(state.sync.adapter, "cline");
 });
 
-test("syncInstalledSkills escreve arquivo MDC para cursor", async (t) => {
+test("syncInstalledSkills escreve arquivo MDC para cursor", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-cursor-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -271,7 +284,7 @@ test("syncInstalledSkills escreve arquivo MDC para cursor", async (t) => {
   assert.match(content, /## Skillex Managed Skills/);
 });
 
-test("syncInstalledSkills escreve arquivo de regras para windsurf", async (t) => {
+test("syncInstalledSkills escreve arquivo de regras para windsurf", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-windsurf-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -293,7 +306,7 @@ test("syncInstalledSkills escreve arquivo de regras para windsurf", async (t) =>
   assert.match(content, /## Skillex Managed Skills/);
 });
 
-test("syncInstalledSkills dry-run gera diff sem escrever arquivo nem lockfile", async (t) => {
+test("syncInstalledSkills dry-run gera diff sem escrever arquivo nem lockfile", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-dry-run-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -314,11 +327,11 @@ test("syncInstalledSkills dry-run gera diff sem escrever arquivo nem lockfile", 
   assert.match(result.diff, /^\+\+\+ novo\/AGENTS\.md$/m);
   assert.equal(await pathExists(path.join(cwd, "AGENTS.md")), false);
 
-  const state = await getInstalledSkills({ cwd });
+  const state = assertState(await getInstalledSkills({ cwd }));
   assert.equal(state.sync, null);
 });
 
-test("auto-sync roda apos install, update e remove quando habilitado", async (t) => {
+test("auto-sync roda apos install, update e remove quando habilitado", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-auto-sync-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
@@ -339,6 +352,7 @@ test("auto-sync roda apos install, update e remove quando habilitado", async (t)
     now: () => "2026-04-06T00:10:00.000Z",
   });
 
+  assert.ok(installResult.autoSync);
   assert.equal(installResult.autoSync.sync.adapter, "codex");
   let content = await fs.readFile(path.join(cwd, "AGENTS.md"), "utf8");
   assert.match(content, /git-master@1\.0\.0/);
@@ -347,12 +361,13 @@ test("auto-sync roda apos install, update e remove quando habilitado", async (t)
     cwd,
     catalogLoader: async () => ({
       ...createCatalog(),
-      skills: [{ ...createCatalog().skills[0], version: "2.0.0" }],
+      skills: [{ ...createCatalog().skills[0]!, version: "2.0.0" }],
     }),
     downloader: fakeDownloader,
     now: () => "2026-04-06T00:20:00.000Z",
   });
 
+  assert.ok(updateResult.autoSync);
   assert.equal(updateResult.autoSync.sync.adapter, "codex");
   content = await fs.readFile(path.join(cwd, "AGENTS.md"), "utf8");
   assert.match(content, /git-master@2\.0\.0/);
@@ -362,11 +377,13 @@ test("auto-sync roda apos install, update e remove quando habilitado", async (t)
     now: () => "2026-04-06T00:30:00.000Z",
   });
 
+  assert.ok(removeResult.autoSync);
   assert.equal(removeResult.autoSync.sync.adapter, "codex");
   content = await fs.readFile(path.join(cwd, "AGENTS.md"), "utf8");
   assert.match(content, /Nenhuma skill instalada no momento\./);
 
-  const state = await getInstalledSkills({ cwd });
+  const state = assertState(await getInstalledSkills({ cwd }));
   assert.equal(state.settings.autoSync, true);
+  assert.ok(state.sync);
   assert.equal(state.sync.adapter, "codex");
 });
