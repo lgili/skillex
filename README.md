@@ -34,7 +34,7 @@ Get up and running in under two minutes using the built-in first-party skills ca
 
 ```bash
 # 1. Initialize your workspace (auto-detects your AI agent)
-npx skillex@latest init --repo lgili/skillex
+npx skillex@latest init
 
 # 2. Browse available skills
 npx skillex@latest list
@@ -46,7 +46,7 @@ npx skillex@latest install create-skills
 npx skillex@latest sync
 ```
 
-After `init`, Skillex saves your repo preference in the local lockfile so you can omit `--repo` in subsequent commands.
+After `init`, Skillex saves the configured source list in the local lockfile. New workspaces start with `lgili/skillex@main` by default, and you can add more sources later with `skillex source add`.
 
 ---
 
@@ -81,6 +81,7 @@ npx skillex <command>
 Initialize (or re-initialize) the workspace. Creates `.agent-skills/skills.json`, detects your adapter, and writes `.agent-skills/.gitignore`.
 
 ```bash
+skillex init
 skillex init --repo <owner/repo>
 skillex init --repo lgili/skillex --adapter cursor
 skillex init --repo lgili/skillex --auto-sync
@@ -88,7 +89,7 @@ skillex init --repo lgili/skillex --auto-sync
 
 | Flag | Description |
 |------|-------------|
-| `--repo <owner/repo>` | **Required.** GitHub repository that hosts the skill catalog. |
+| `--repo <owner/repo>` | Optional. Overrides the default first-party source for this workspace. |
 | `--adapter <id>` | Force a specific adapter instead of auto-detecting. |
 | `--auto-sync` | Automatically run `sync` after every install, update, and remove. |
 | `--ref <branch>` | Use a specific branch or tag (default: `main`). |
@@ -97,15 +98,17 @@ skillex init --repo lgili/skillex --auto-sync
 
 ### `list`
 
-List all skills available in the remote catalog.
+List all skills available across the configured sources.
 
 ```bash
 skillex list
 skillex list --json
+skillex list --repo myorg/my-skills
 ```
 
 | Flag | Description |
 |------|-------------|
+| `--repo <owner/repo>` | Limit the command to a single source instead of aggregating all configured sources. |
 | `--json` | Print raw JSON instead of formatted output. |
 | `--no-cache` | Bypass the local catalog cache and fetch fresh data. |
 
@@ -120,10 +123,12 @@ skillex search git
 skillex search --compatibility cursor
 skillex search --tags workflow
 skillex search review --compatibility claude --tags code-quality
+skillex search code-review --repo myorg/my-skills
 ```
 
 | Flag | Description |
 |------|-------------|
+| `--repo <owner/repo>` | Limit the command to a single source instead of aggregating all configured sources. |
 | `--compatibility <adapter>` | Filter by adapter (e.g. `cursor`, `claude`, `codex`). |
 | `--tags <tag>` | Filter by tag. |
 | `--json` | Print raw JSON. |
@@ -144,6 +149,9 @@ skillex install git-master code-review
 # Install all skills from the catalog
 skillex install --all
 
+# Install from one specific source when an id exists in multiple sources
+skillex install code-review --repo myorg/my-skills
+
 # Install directly from a GitHub repository (no catalog needed)
 skillex install owner/repo/path/to/skill@main --trust
 ```
@@ -151,6 +159,7 @@ skillex install owner/repo/path/to/skill@main --trust
 | Flag | Description |
 |------|-------------|
 | `--all` | Install every skill in the catalog. |
+| `--repo <owner/repo>` | Limit resolution to a single source when needed. |
 | `--trust` | Skip confirmation prompt for direct GitHub installs. |
 
 ---
@@ -251,7 +260,7 @@ Checks performed:
 | # | Check | What it verifies |
 |---|-------|-----------------|
 | 1 | Lockfile | `.agent-skills/skills.json` exists |
-| 2 | Repo | Catalog repo is configured in the lockfile |
+| 2 | Source | At least one catalog source is configured in the lockfile |
 | 3 | Adapter | At least one adapter is detected or active |
 | 4 | GitHub | `api.github.com` is reachable |
 | 5 | Token | `GITHUB_TOKEN` present → 5,000 req/hr; absent → 60 req/hr |
@@ -281,6 +290,31 @@ skillex config set disableAutoSync true
 | `defaultAdapter` | Default adapter when auto-detection is ambiguous. |
 | `githubToken` | GitHub personal access token (prefer `GITHUB_TOKEN` env var). |
 | `disableAutoSync` | Set to `true` to globally disable auto-sync. |
+
+---
+
+### `source`
+
+Manage multiple catalog sources in the current workspace.
+
+```bash
+skillex source list
+skillex source add myorg/my-skills --label work
+skillex source remove myorg/my-skills
+```
+
+Typical flow:
+
+```bash
+# starts with lgili/skillex by default
+skillex init
+
+# add your team catalog
+skillex source add myorg/my-skills --label work
+
+# browse both together
+skillex list
+```
 
 ---
 
@@ -471,7 +505,7 @@ After `init` and a few installs, your workspace will look like this:
 
 The `skills.json` lockfile records:
 
-- Remote catalog repo and ref
+- Configured source list with repo, ref, and optional label
 - Active adapter and all detected adapters
 - `autoSync` setting
 - Last sync: adapter, target path, timestamp, and write mode (`symlink` or `copy`)
@@ -488,7 +522,7 @@ When `--auto-sync` is enabled at `init`, Skillex runs `sync` automatically after
 
 ```bash
 # Enable at init time
-skillex init --repo lgili/skillex --auto-sync
+skillex init --auto-sync
 
 # Or re-initialize to enable it
 skillex init --repo lgili/skillex --auto-sync
@@ -504,7 +538,7 @@ Run `skillex doctor` first — it checks the six most common issues and tells yo
 $ skillex doctor
 
 ✓ Lockfile found at .agent-skills/skills.json
-✓ Repo configured: lgili/skillex @ main
+✓ Source configured: lgili/skillex @ main
 ✓ Adapter active: cursor
 ✓ GitHub API reachable
 ⚠ Token: unauthenticated (60 req/hr) — set GITHUB_TOKEN to raise limit
@@ -515,10 +549,10 @@ $ skillex doctor
 
 | Symptom | Fix |
 |---------|-----|
-| `Missing required flag: --repo` | Run `skillex init --repo owner/repo` |
 | `GitHub API rate limit exceeded` | Set `GITHUB_TOKEN` in your environment |
 | `Repository or file not found` | Check `--repo` value; ensure the repo is public |
 | `No adapter detected` | Run `skillex init --adapter <id>` with an explicit adapter |
+| `Skill "..." exists in multiple sources` | Re-run with `--repo owner/repo` to choose the source |
 | `skillex sync` shows no changes | Run `skillex install --all` first to install skills |
 | Slow catalog fetch | Use `--no-cache` once, then the 5-min cache takes over |
 

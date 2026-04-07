@@ -6,10 +6,14 @@ import assert from "node:assert/strict";
 
 import { ensureDir, pathExists, writeJson, writeText } from "../src/fs.js";
 import {
+  addProjectSource,
   getInstalledSkills,
   initProject,
   installSkills,
+  listProjectSources,
+  loadProjectCatalogs,
   parseDirectGitHubRef,
+  removeProjectSource,
   removeSkills,
   updateInstalledSkills,
 } from "../src/install.js";
@@ -67,6 +71,45 @@ test("parseDirectGitHubRef aceita owner/repo[@ref]", () => {
   assert.equal(parseDirectGitHubRef("git-master"), null);
 });
 
+test("initProject usa o catalogo official por padrao", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-init-default-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const result = await initProject({
+    cwd,
+    now: () => "2026-04-06T00:00:00.000Z",
+  });
+
+  assert.equal(result.lockfile.sources[0]?.repo, "lgili/skillex");
+  assert.equal(result.lockfile.sources[0]?.ref, "main");
+});
+
+test("getInstalledSkills migra lockfile legado com catalog unico", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-legacy-lockfile-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await ensureDir(path.join(cwd, ".agent-skills"));
+  await writeJson(path.join(cwd, ".agent-skills", "skills.json"), {
+    formatVersion: 1,
+    createdAt: "2026-04-06T00:00:00.000Z",
+    updatedAt: "2026-04-06T00:00:00.000Z",
+    catalog: { repo: "example/skills", ref: "main" },
+    adapters: { active: null, detected: [] },
+    settings: { autoSync: false },
+    sync: null,
+    syncMode: null,
+    installed: {},
+  });
+
+  const state = await getInstalledSkills({ cwd });
+  assert.ok(state);
+  assert.deepEqual(state.sources, [{ repo: "example/skills", ref: "main" }]);
+});
+
 test("install, update e remove manipulam o lockfile local", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-install-"));
   t.after(async () => {
@@ -122,6 +165,160 @@ test("install, update e remove manipulam o lockfile local", async (t: TestContex
   assert.ok(state);
   assert.deepEqual(state.installed, {});
   assert.equal(await pathExists(path.join(cwd, ".agent-skills", "skills", "git-master")), false);
+});
+
+test("source add, list e remove manipulam multiplos sources", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sources-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await initProject({
+    cwd,
+    now: () => "2026-04-06T00:00:00.000Z",
+  });
+
+  await addProjectSource(
+    { repo: "myorg/my-skills", ref: "main", label: "work" },
+    { cwd, now: () => "2026-04-06T00:10:00.000Z" },
+  );
+
+  let sources = await listProjectSources({ cwd });
+  assert.deepEqual(sources, [
+    { repo: "lgili/skillex", ref: "main", label: "official" },
+    { repo: "myorg/my-skills", ref: "main", label: "work" },
+  ]);
+
+  const updatedState = await removeProjectSource("myorg/my-skills", {
+    cwd,
+    now: () => "2026-04-06T00:20:00.000Z",
+  });
+
+  sources = await listProjectSources({ cwd });
+  assert.equal(updatedState.sources.length, 1);
+  assert.deepEqual(sources, [{ repo: "lgili/skillex", ref: "main", label: "official" }]);
+});
+
+test("loadProjectCatalogs agrega skills de todos os sources", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-aggregate-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await initProject({ cwd, now: () => "2026-04-06T00:00:00.000Z" });
+  await addProjectSource(
+    { repo: "myorg/my-skills", label: "work" },
+    { cwd, now: () => "2026-04-06T00:10:00.000Z" },
+  );
+
+  const aggregated = await loadProjectCatalogs(
+    { cwd },
+    async (source) => ({
+      formatVersion: 1,
+      repo: source.repo,
+      ref: source.ref,
+      skills: [
+        {
+          id: source.repo === "lgili/skillex" ? "create-skills" : "code-review",
+          name: source.repo === "lgili/skillex" ? "Create Skills" : "Code Review",
+          version: "1.0.0",
+          description: "demo",
+          author: null,
+          tags: [],
+          compatibility: ["codex"],
+          entry: "SKILL.md",
+          path: "skills/demo",
+          files: ["SKILL.md"],
+        },
+      ],
+    }),
+  );
+
+  assert.deepEqual(aggregated.skills.map((skill) => skill.id), ["create-skills", "code-review"]);
+  assert.deepEqual(aggregated.sources.map((source) => source.repo), ["lgili/skillex", "myorg/my-skills"]);
+});
+
+test("installSkills falha quando um id existe em mais de um source configurado", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-ambiguous-install-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await initProject({ cwd, now: () => "2026-04-06T00:00:00.000Z" });
+  await addProjectSource(
+    { repo: "myorg/my-skills" },
+    { cwd, now: () => "2026-04-06T00:10:00.000Z" },
+  );
+
+  await assert.rejects(
+    () =>
+      installSkills(["code-review"], {
+        cwd,
+        catalogLoader: async (source) => ({
+          formatVersion: 1,
+          repo: source.repo,
+          ref: source.ref,
+          skills: [
+            {
+              id: "code-review",
+              name: "Code Review",
+              version: "1.0.0",
+              description: "demo",
+              author: null,
+              tags: [],
+              compatibility: ["codex"],
+              entry: "SKILL.md",
+              path: "skills/code-review",
+              files: ["SKILL.md"],
+            },
+          ],
+        }),
+        downloader: fakeDownloader,
+      }),
+    /Use --repo to choose one/,
+  );
+});
+
+test("installSkills --all falha quando ha ids duplicados entre sources", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-ambiguous-install-all-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await initProject({ cwd, now: () => "2026-04-06T00:00:00.000Z" });
+  await addProjectSource(
+    { repo: "myorg/my-skills" },
+    { cwd, now: () => "2026-04-06T00:10:00.000Z" },
+  );
+
+  await assert.rejects(
+    () =>
+      installSkills([], {
+        cwd,
+        installAll: true,
+        catalogLoader: async (source) => ({
+          formatVersion: 1,
+          repo: source.repo,
+          ref: source.ref,
+          skills: [
+            {
+              id: "shared-skill",
+              name: "Shared Skill",
+              version: "1.0.0",
+              description: "demo",
+              author: null,
+              tags: [],
+              compatibility: ["codex"],
+              entry: "SKILL.md",
+              path: "skills/shared-skill",
+              files: ["SKILL.md"],
+            },
+          ],
+        }),
+        downloader: fakeDownloader,
+      }),
+    /Use --repo to choose one source at a time/,
+  );
 });
 
 test("updateInstalledSkills reporta skill ausente no catalogo remoto", async (t: TestContext) => {

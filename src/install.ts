@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { DEFAULT_AGENT_SKILLS_DIR, getStatePaths } from "./config.js";
+import { DEFAULT_AGENT_SKILLS_DIR, DEFAULT_REF, DEFAULT_REPO, getStatePaths } from "./config.js";
 import { confirmAction } from "./confirm.js";
 import { ensureDir, pathExists, readJson, removePath, writeJson, writeText } from "./fs.js";
 import { fetchOptionalJson, fetchOptionalText, fetchText } from "./http.js";
@@ -8,6 +8,7 @@ import { resolveAdapterState } from "./adapters.js";
 import { loadInstalledSkillDocuments, syncAdapterFiles } from "./sync.js";
 import { parseSkillFrontmatter } from "./skill.js";
 import type {
+  AggregatedCatalogData,
   CatalogData,
   CatalogLoader,
   CatalogSource,
@@ -15,10 +16,13 @@ import type {
   DirectGitHubRef,
   InitProjectResult,
   InstallSkillsResult,
+  LockfileSource,
   LockfileState,
   NowFn,
   ProjectOptions,
   RemoveSkillsResult,
+  ResolvedSkillSelection,
+  SourcedSkillManifest,
   SkillDownloader,
   SkillManifest,
   SyncCommandResult,
@@ -68,12 +72,7 @@ export async function initProject(options: ProjectOptions = {}): Promise<InitPro
     await ensureDir(statePaths.generatedDirPath);
 
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
-    const source = resolveSource(
-      toCatalogSourceInput(options, {
-        repo: options.repo || existing?.catalog?.repo,
-        ref: options.ref || existing?.catalog?.ref,
-      }),
-    );
+    const source = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
     const lockfile = normalizeLockfile(existing, source, now);
     lockfile.adapters = await resolveAdapterState({
       cwd,
@@ -81,10 +80,9 @@ export async function initProject(options: ProjectOptions = {}): Promise<InitPro
         ? { adapter: options.adapter || lockfile.adapters.active || undefined }
         : {}),
     });
-    lockfile.catalog = {
-      repo: source.repo,
-      ref: source.ref,
-    };
+    if (options.repo) {
+      lockfile.sources = [toLockfileSource(source)];
+    }
     lockfile.settings.autoSync = options.autoSync ?? lockfile.settings.autoSync;
     if (lockfile.settings.autoSync && !lockfile.adapters.active) {
       throw new InstallError(
@@ -130,9 +128,10 @@ export async function installSkills(
     await ensureDir(statePaths.skillsDirPath);
     await ensureDir(statePaths.generatedDirPath);
 
-    const source = await resolveProjectSource(options);
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
-    const lockfile = normalizeLockfile(existing, source, now);
+    const overrideSource = options.repo ? resolveSource(toCatalogSourceInput(options, { repo: options.repo, ref: options.ref })) : null;
+    const defaultSource = overrideSource || resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+    const lockfile = normalizeLockfile(existing, defaultSource, now);
     if (!lockfile.adapters.active) {
       lockfile.adapters = await resolveAdapterState({
         cwd,
@@ -151,25 +150,21 @@ export async function installSkills(
     }
 
     if (options.installAll || catalogIds.length > 0) {
-      const catalog = await catalogLoader(source);
-      const selectedSkills = selectSkills(catalog.skills, catalogIds, options.installAll);
+      const selectedSkills = await selectSkillsFromSources(lockfile, catalogIds, options, catalogLoader);
       const totalCount = selectedSkills.length + directRefs.length;
       for (let i = 0; i < selectedSkills.length; i++) {
-        const skill = selectedSkills[i]!;
+        const selection = selectedSkills[i]!;
+        const skill = selection.skill;
         options.onProgress?.(i + 1, totalCount, skill.id);
-        await downloader(skill, catalog, statePaths.skillsDirPath);
+        await downloader(skill, selection.catalog, statePaths.skillsDirPath);
         lockfile.installed[skill.id] = buildInstalledMetadata(skill, {
           cwd,
           statePaths,
           installedAt: now(),
-          source: `catalog:${catalog.repo}@${catalog.ref}`,
+          source: `catalog:${selection.catalog.repo}@${selection.catalog.ref}`,
         });
         installedSkills.push(skill);
       }
-      lockfile.catalog = {
-        repo: catalog.repo,
-        ref: catalog.ref,
-      };
     } else if (!directRefs.length) {
       throw new InstallError("Provide at least one skill-id, use --all, or pass owner/repo[@ref].", "INSTALL_REQUIRES_SKILL");
     }
@@ -241,8 +236,8 @@ export async function updateInstalledSkills(
       throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
     }
 
-    const source = await resolveProjectSource(options);
-    const lockfile = normalizeLockfile(existing, source, now);
+    const defaultSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+    const lockfile = normalizeLockfile(existing, defaultSource, now);
     const skillIds = resolveInstalledSkillIds(lockfile, requestedSkillIds);
     const directIds = skillIds.filter((skillId) => {
       const metadata = lockfile.installed[skillId];
@@ -253,28 +248,24 @@ export async function updateInstalledSkills(
     const missingFromCatalog: string[] = [];
 
     if (catalogIds.length > 0) {
-      const catalog = await catalogLoader(source);
-      const catalogById = new Map<string, SkillManifest>(catalog.skills.map((skill) => [skill.id, skill]));
       for (const skillId of catalogIds) {
-        const skill = catalogById.get(skillId);
-        if (!skill) {
+        const metadata = lockfile.installed[skillId];
+        const catalogSelection = await resolveInstalledCatalogSelection(skillId, metadata?.source, options, lockfile, catalogLoader);
+        if (!catalogSelection) {
           missingFromCatalog.push(skillId);
           continue;
         }
 
-        await downloader(skill, catalog, statePaths.skillsDirPath);
+        const skill = catalogSelection.skill;
+        await downloader(skill, catalogSelection.catalog, statePaths.skillsDirPath);
         lockfile.installed[skill.id] = buildInstalledMetadata(skill, {
           cwd,
           statePaths,
           installedAt: now(),
-          source: `catalog:${catalog.repo}@${catalog.ref}`,
+          source: `catalog:${catalogSelection.catalog.repo}@${catalogSelection.catalog.ref}`,
         });
         updatedSkills.push(skill);
       }
-      lockfile.catalog = {
-        repo: catalog.repo,
-        ref: catalog.ref,
-      };
     }
 
     for (const skillId of directIds) {
@@ -348,8 +339,8 @@ export async function removeSkills(
       throw new InstallError("Provide at least one skill-id to remove.", "REMOVE_REQUIRES_SKILL");
     }
 
-    const source = await resolveProjectSource(options);
-    const lockfile = normalizeLockfile(existing, source, now);
+    const defaultSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+    const lockfile = normalizeLockfile(existing, defaultSource, now);
     const removedSkills: string[] = [];
     const missingSkills: string[] = [];
 
@@ -410,8 +401,8 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
       throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
     }
 
-    const source = await resolveProjectSource(options);
-    const lockfile = normalizeLockfile(existing, source, now);
+    const defaultSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+    const lockfile = normalizeLockfile(existing, defaultSource, now);
     const adapterId = options.adapter || lockfile.adapters.active;
     if (!adapterId) {
       throw new InstallError(
@@ -502,12 +493,135 @@ export async function resolveProjectSource(options: ProjectOptions = {}): Promis
   const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
   const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
-  return resolveSource(
-    toCatalogSourceInput(options, {
-      repo: options.repo || existing?.catalog?.repo,
-      ref: options.ref || existing?.catalog?.ref,
+  return resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+}
+
+/**
+ * Resolves all effective project sources using CLI overrides or local state.
+ *
+ * @param options - Project lookup options.
+ * @returns Resolved source list.
+ */
+export async function resolveProjectSources(options: ProjectOptions = {}): Promise<LockfileSource[]> {
+  const cwd = options.cwd || process.cwd();
+  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
+
+  if (options.repo) {
+    return [toLockfileSource(resolveSource(toCatalogSourceInput(options, { repo: options.repo, ref: options.ref })))];
+  }
+
+  return getLockfileSources(existing, resolveSource(toCatalogSourceInput(options)));
+}
+
+/**
+ * Aggregates skills from all effective project sources.
+ *
+ * @param options - Project lookup options.
+ * @param catalogLoader - Optional catalog loader override.
+ * @returns Aggregated skills grouped by source metadata.
+ */
+export async function loadProjectCatalogs(
+  options: ProjectOptions = {},
+  catalogLoader: CatalogLoader = loadCatalog,
+): Promise<AggregatedCatalogData> {
+  const sources = await resolveProjectSources(options);
+  const loaded = await Promise.all(
+    sources.map(async (source) => {
+      const catalog = await catalogLoader(resolveSource(toCatalogSourceInput(options, source)));
+      const skills: SourcedSkillManifest[] = catalog.skills.map((skill) => ({
+        ...skill,
+        source: {
+          repo: source.repo,
+          ref: source.ref,
+          ...(source.label ? { label: source.label } : {}),
+        },
+      }));
+      return { source, catalog, skills };
     }),
   );
+
+  return {
+    formatVersion: 1,
+    skills: loaded.flatMap((entry) => entry.skills),
+    sources: loaded.map((entry) => ({ ...entry.source, skillCount: entry.catalog.skills.length })),
+  };
+}
+
+/**
+ * Adds a source to the workspace lockfile.
+ *
+ * @param sourceInput - Repository to add.
+ * @param options - Project options.
+ * @returns Updated normalized lockfile.
+ */
+export async function addProjectSource(
+  sourceInput: { repo: string; ref?: string | undefined; label?: string | undefined },
+  options: ProjectOptions = {},
+): Promise<LockfileState> {
+  const cwd = options.cwd || process.cwd();
+  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const now = getNow(options);
+  await ensureDir(statePaths.stateDir);
+  await ensureDir(statePaths.skillsDirPath);
+  await ensureDir(statePaths.generatedDirPath);
+  const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
+  const fallbackSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+  const lockfile = normalizeLockfile(existing, fallbackSource, now);
+  const source = toLockfileSource(resolveSource(toCatalogSourceInput(options, sourceInput)), sourceInput.label);
+  if (lockfile.sources.some((entry) => entry.repo === source.repo && entry.ref === source.ref)) {
+    throw new InstallError(`Source \"${source.repo}@${source.ref}\" is already configured.`, "SOURCE_ALREADY_EXISTS");
+  }
+  lockfile.sources.push(source);
+  lockfile.updatedAt = now();
+  await writeJson(statePaths.lockfilePath, lockfile);
+  return lockfile;
+}
+
+/**
+ * Removes a source from the workspace lockfile.
+ *
+ * @param repo - Repository to remove.
+ * @param options - Project options.
+ * @returns Updated normalized lockfile.
+ */
+export async function removeProjectSource(repo: string, options: ProjectOptions = {}): Promise<LockfileState> {
+  const cwd = options.cwd || process.cwd();
+  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const now = getNow(options);
+  const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
+
+  if (!existing) {
+    throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
+  }
+
+  const fallbackSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+  const lockfile = normalizeLockfile(existing, fallbackSource, now);
+  const remaining = lockfile.sources.filter((entry) => entry.repo !== repo);
+  if (remaining.length === lockfile.sources.length) {
+    throw new InstallError(`Source \"${repo}\" is not configured.`, "SOURCE_NOT_FOUND");
+  }
+  if (remaining.length === 0) {
+    throw new InstallError("At least one source must remain configured.", "SOURCE_REMOVE_LAST");
+  }
+  lockfile.sources = remaining;
+  lockfile.updatedAt = now();
+  await writeJson(statePaths.lockfilePath, lockfile);
+  return lockfile;
+}
+
+/**
+ * Lists configured workspace sources.
+ *
+ * @param options - Project options.
+ * @returns Normalized source list.
+ */
+export async function listProjectSources(options: ProjectOptions = {}): Promise<LockfileSource[]> {
+  const cwd = options.cwd || process.cwd();
+  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
+  const fallbackSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
+  return getLockfileSources(existing, fallbackSource);
 }
 
 /**
@@ -538,10 +652,7 @@ function createBaseLockfile(source: CatalogSource, now: NowFn): LockfileState {
     formatVersion: 1,
     createdAt: now(),
     updatedAt: now(),
-    catalog: {
-      repo: source.repo,
-      ref: source.ref,
-    },
+    sources: [toLockfileSource(source)],
     adapters: {
       active: null,
       detected: [],
@@ -553,27 +664,6 @@ function createBaseLockfile(source: CatalogSource, now: NowFn): LockfileState {
     syncMode: null,
     installed: {},
   };
-}
-
-function selectSkills(allSkills: SkillManifest[], requestedSkillIds: string[], installAll = false): SkillManifest[] {
-  if (installAll) {
-    return allSkills;
-  }
-
-  if (!requestedSkillIds.length) {
-    return [];
-  }
-
-  const byId = new Map<string, SkillManifest>(allSkills.map((skill) => [skill.id, skill]));
-  const selected = requestedSkillIds.map((skillId) => {
-    const skill = byId.get(skillId);
-    if (!skill) {
-      throw new InstallError(`Skill "${skillId}" not found in the remote catalog.`, "SKILL_NOT_FOUND");
-    }
-    return skill;
-  });
-
-  return selected;
 }
 
 async function downloadSkill(skill: SkillManifest, catalog: CatalogData, skillsDirPath: string): Promise<void> {
@@ -707,10 +797,7 @@ function normalizeLockfile(existing: LockfileState | null, source: CatalogSource
     formatVersion: Number(existing.formatVersion || 1),
     createdAt: existing.createdAt || now(),
     updatedAt: existing.updatedAt || now(),
-    catalog: {
-      repo: existing.catalog?.repo || source.repo,
-      ref: existing.catalog?.ref || source.ref,
-    },
+    sources: getLockfileSources(existing, source),
     adapters: {
       active: activeAdapter,
       detected: [...new Set(detectedAdapters.filter(Boolean))],
@@ -721,6 +808,167 @@ function normalizeLockfile(existing: LockfileState | null, source: CatalogSource
     sync: existing.sync || null,
     syncMode: existing.syncMode || null,
     installed: existing.installed || {},
+  };
+}
+
+function getLockfileSources(existing: LockfileState | null, fallbackSource: CatalogSource): LockfileSource[] {
+  const legacyCatalog = getLegacyCatalog(existing);
+  const configuredSources = Array.isArray(existing?.sources)
+    ? existing.sources
+        .filter((entry): entry is LockfileSource => Boolean(entry?.repo))
+        .map((entry) => ({
+          repo: entry.repo,
+          ref: entry.ref || DEFAULT_REF,
+          ...(entry.label ? { label: entry.label } : {}),
+        }))
+    : [];
+
+  if (configuredSources.length > 0) {
+    return dedupeSources(configuredSources);
+  }
+
+  if (legacyCatalog?.repo) {
+    return dedupeSources([
+      {
+        repo: legacyCatalog.repo,
+        ref: legacyCatalog.ref || DEFAULT_REF,
+      },
+    ]);
+  }
+
+  return [toLockfileSource(fallbackSource)];
+}
+
+function getLegacyCatalog(existing: LockfileState | null): { repo?: string; ref?: string } | null {
+  if (!existing || !("catalog" in existing)) {
+    return null;
+  }
+  const legacyState = existing as LockfileState & { catalog?: { repo?: string; ref?: string } };
+  return legacyState.catalog || null;
+}
+
+function dedupeSources(sources: LockfileSource[]): LockfileSource[] {
+  const unique = new Map<string, LockfileSource>();
+  for (const source of sources) {
+    const key = `${source.repo}@${source.ref}`;
+    if (!unique.has(key)) {
+      unique.set(key, source);
+    }
+  }
+  return [...unique.values()];
+}
+
+function toLockfileSource(source: CatalogSource, label?: string): LockfileSource {
+  return {
+    repo: source.repo,
+    ref: source.ref,
+    ...((label || source.repo === DEFAULT_REPO) && (label || source.repo === DEFAULT_REPO)
+      ? { label: label || "official" }
+      : {}),
+  };
+}
+
+function resolvePrimarySourceOverride(
+  options: ProjectOptions,
+  existing: LockfileState | null,
+): { repo?: string; ref?: string } {
+  const sources = getLockfileSources(existing, resolveSource(toCatalogSourceInput(options)));
+  const repo = options.repo || sources[0]?.repo;
+  const ref = options.ref || sources[0]?.ref;
+  return {
+    ...(repo ? { repo } : {}),
+    ...(ref ? { ref } : {}),
+  };
+}
+
+async function selectSkillsFromSources(
+  lockfile: LockfileState,
+  requestedSkillIds: string[],
+  options: InstallOptions,
+  catalogLoader: CatalogLoader,
+): Promise<ResolvedSkillSelection[]> {
+  const sources = options.repo
+    ? [toLockfileSource(resolveSource(toCatalogSourceInput(options, { repo: options.repo, ref: options.ref })))]
+    : lockfile.sources;
+  const catalogs = await Promise.all(
+    sources.map(async (source) => ({
+      source,
+      catalog: await catalogLoader(resolveSource(toCatalogSourceInput(options, source))),
+    })),
+  );
+
+  if (options.installAll) {
+    const selections = catalogs.flatMap(({ source, catalog }) => catalog.skills.map((skill) => ({ skill, catalog, source })));
+    const seen = new Map<string, string>();
+    for (const entry of selections) {
+      const currentSource = `${entry.source.repo}@${entry.source.ref}`;
+      const previousSource = seen.get(entry.skill.id);
+      if (previousSource) {
+        throw new InstallError(
+          `Skill "${entry.skill.id}" exists in multiple sources: ${previousSource}, ${currentSource}. Use --repo to choose one source at a time.`,
+          "SKILL_AMBIGUOUS_SOURCE",
+        );
+      }
+      seen.set(entry.skill.id, currentSource);
+    }
+    return selections;
+  }
+
+  if (!requestedSkillIds.length) {
+    return [];
+  }
+
+  return requestedSkillIds.map((skillId) => {
+    const matches = catalogs.flatMap(({ source, catalog }) => {
+      const skill = catalog.skills.find((entry) => entry.id === skillId);
+      return skill ? [{ skill, catalog, source }] : [];
+    });
+
+    if (matches.length === 0) {
+      throw new InstallError(`Skill "${skillId}" not found in the configured sources.`, "SKILL_NOT_FOUND");
+    }
+
+    if (matches.length > 1) {
+      const sourceList = matches.map((entry) => `${entry.source.repo}@${entry.source.ref}`).join(", ");
+      throw new InstallError(
+        `Skill "${skillId}" exists in multiple sources: ${sourceList}. Use --repo to choose one.`,
+        "SKILL_AMBIGUOUS_SOURCE",
+      );
+    }
+
+    return matches[0]!;
+  });
+}
+
+async function resolveInstalledCatalogSelection(
+  skillId: string,
+  sourceRef: string | undefined,
+  options: InstallOptions,
+  lockfile: LockfileState,
+  catalogLoader: CatalogLoader,
+): Promise<ResolvedSkillSelection | null> {
+  const explicitSource = sourceRef?.startsWith("catalog:") ? parseCatalogSource(sourceRef) : null;
+  const sources = explicitSource ? [explicitSource] : lockfile.sources;
+
+  for (const source of sources) {
+    const catalog = await catalogLoader(resolveSource(toCatalogSourceInput(options, source)));
+    const skill = catalog.skills.find((entry) => entry.id === skillId);
+    if (skill) {
+      return { skill, catalog, source };
+    }
+  }
+
+  return null;
+}
+
+function parseCatalogSource(source: string): LockfileSource | null {
+  const match = source.match(/^catalog:([^@]+\/[^@]+)@(.+)$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    repo: match[1]!,
+    ref: match[2]!,
   };
 }
 

@@ -8,9 +8,13 @@ import {
 } from "./catalog.js";
 import { DEFAULT_AGENT_SKILLS_DIR, getStatePaths } from "./config.js";
 import {
+  addProjectSource,
   getInstalledSkills,
   initProject,
   installSkills,
+  listProjectSources,
+  loadProjectCatalogs,
+  removeProjectSource,
   removeSkills,
   resolveProjectSource,
   syncInstalledSkills,
@@ -32,26 +36,27 @@ type CliFlags = Record<string, string | boolean>;
 // ---------------------------------------------------------------------------
 
 const COMMAND_HELP: Record<string, string> = {
-  init: `Usage: skillex init --repo <owner/repo> [options]
+  init: `Usage: skillex init [--repo <owner/repo>] [options]
 
 Initialize the local Skillex workspace.
 
 Options:
-  --repo <owner/repo>   GitHub repository with skills (required)
+  --repo <owner/repo>   GitHub repository with skills (default: lgili/skillex)
   --ref <ref>           Branch, tag, or commit (default: main)
   --adapter <id>        Force a specific adapter
   --auto-sync           Enable auto-sync after install/update/remove
   --cwd <path>          Target project directory (default: current directory)
 
 Example:
+  skillex init
   skillex init --repo myorg/my-skills`,
 
   list: `Usage: skillex list [options]
 
-List all skills in the configured catalog.
+List all skills in the configured sources.
 
 Options:
-  --repo <owner/repo>   GitHub repository (uses saved config if omitted)
+  --repo <owner/repo>   GitHub repository (limits this command to one source)
   --ref <ref>           Branch, tag, or commit
   --no-cache            Bypass local catalog cache
   --json                Output results as JSON
@@ -65,7 +70,7 @@ Example:
 Search skills by text, compatibility, or tags.
 
 Options:
-  --repo <owner/repo>   GitHub repository
+  --repo <owner/repo>   GitHub repository (limits this command to one source)
   --compatibility <id>  Filter by adapter compatibility
   --tag <tag>           Filter by tag
   --no-cache            Bypass local catalog cache
@@ -82,7 +87,7 @@ Install one or more skills from the catalog or directly from GitHub.
 
 Options:
   --all                 Install all skills from the catalog
-  --repo <owner/repo>   GitHub repository
+  --repo <owner/repo>   GitHub repository (limits this command to one source)
   --ref <ref>           Branch, tag, or commit
   --trust               Skip confirmation for direct GitHub installs
   --adapter <id>        Target adapter
@@ -182,6 +187,22 @@ Precedence order: CLI flag > GITHUB_TOKEN env > global config > default
 Example:
   skillex config set defaultRepo myorg/my-skills
   skillex config get defaultRepo`,
+
+  source: `Usage: skillex source <add|remove|list> [repo] [options]
+
+Manage the workspace source list.
+
+Commands:
+  skillex source list
+  skillex source add <owner/repo> [--ref main] [--label work]
+  skillex source remove <owner/repo>
+
+Options:
+  --ref <ref>           Branch, tag, or commit (default: main)
+  --label <label>       Human-readable source label
+
+Example:
+  skillex source add myorg/my-skills --label work`,
 };
 
 // ---------------------------------------------------------------------------
@@ -265,6 +286,9 @@ export async function main(argv: string[]): Promise<void> {
     case "config":
       await handleConfig(positionals, flags);
       return;
+    case "source":
+      await handleSource(positionals, flags, userConfig);
+      return;
     default:
       throw new CliError(
         `Unknown command: ${resolvedCommand}. Run "skillex help" to see available commands.`,
@@ -278,15 +302,12 @@ export async function main(argv: string[]): Promise<void> {
 
 async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const repo = asOptionalString(flags.repo) ?? userConfig.defaultRepo;
-  if (!repo) {
-    throw new CliError(
-      "Missing required flag: --repo <owner/repo>\n\nExample: skillex init --repo myorg/my-skills",
-      "INIT_REQUIRES_REPO",
-    );
-  }
 
   const opts = commonOptions(flags, userConfig);
-  const result = await initProject({ ...opts, repo });
+  const result = await initProject({
+    ...opts,
+    ...(repo ? { repo } : {}),
+  });
 
   if (result.created) {
     output.success(`Initialized at ${result.statePaths.stateDir}`);
@@ -294,7 +315,11 @@ async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void
     output.info(`Already configured at ${result.statePaths.stateDir}`);
   }
 
-  output.info(`  Catalog : ${result.lockfile.catalog.repo}@${result.lockfile.catalog.ref}`);
+  const primarySource = result.lockfile.sources[0];
+  output.info(`  Source  : ${primarySource?.repo}@${primarySource?.ref}`);
+  if (result.lockfile.sources.length > 1) {
+    output.info(`  Sources : ${result.lockfile.sources.length}`);
+  }
 
   if (result.lockfile.adapters.active) {
     output.info(`  Adapter : ${result.lockfile.adapters.active}`);
@@ -311,34 +336,37 @@ async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void
 
 async function handleList(flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const opts = commonOptions(flags, userConfig);
-  const source = await resolveProjectSource(opts);
-  const catalog = await loadCatalog({ ...source, ...cacheOptions(opts) });
+  const aggregated = await loadProjectCatalogs({ ...opts, ...cacheOptions(opts) });
 
-  const rows = catalog.skills.map((skill) => ({
-    id: skill.id,
-    version: skill.version,
-    name: skill.name,
-    description: truncate(skill.description, 96),
-  }));
-
-  if (rows.length === 0) {
+  if (aggregated.skills.length === 0) {
     output.info("No skills found.");
     return;
   }
 
   if (flags.json === true) {
-    output.info(JSON.stringify(catalog.skills, null, 2));
+    output.info(JSON.stringify(aggregated.skills, null, 2));
     return;
   }
 
-  output.info(`Catalog: ${catalog.repo}@${catalog.ref}`);
-  printTable(rows);
+  for (const source of aggregated.sources) {
+    output.info(`Source: ${source.repo}@${source.ref}${source.label ? ` [${source.label}]` : ""}`);
+    printTable(
+      aggregated.skills
+        .filter((skill) => skill.source.repo === source.repo && skill.source.ref === source.ref)
+        .map((skill) => ({
+          id: skill.id,
+          version: skill.version,
+          name: skill.name,
+          description: truncate(skill.description, 96),
+        })),
+    );
+    output.info("");
+  }
 }
 
 async function handleSearch(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const opts = commonOptions(flags, userConfig);
-  const source = await resolveProjectSource(opts);
-  const catalog = await loadCatalog({ ...source, ...cacheOptions(opts) });
+  const aggregated = await loadProjectCatalogs({ ...opts, ...cacheOptions(opts) });
 
   const searchOptions: SearchOptions = { query: positionals.join(" ") };
   const compatibility = asOptionalString(flags.compatibility);
@@ -346,7 +374,7 @@ async function handleSearch(positionals: string[], flags: CliFlags, userConfig: 
   if (compatibility) searchOptions.compatibility = compatibility;
   if (tag) searchOptions.tags = tag;
 
-  const filtered = searchCatalogSkills(catalog.skills, searchOptions);
+  const filtered = searchCatalogSkills(aggregated.skills, searchOptions) as typeof aggregated.skills;
 
   if (filtered.length === 0) {
     output.info("No skills match the given filters.");
@@ -358,15 +386,22 @@ async function handleSearch(positionals: string[], flags: CliFlags, userConfig: 
     return;
   }
 
-  output.info(`Catalog: ${catalog.repo}@${catalog.ref}`);
-  printTable(
-    filtered.map((skill) => ({
-      id: skill.id,
-      version: skill.version,
-      compatibility: skill.compatibility.join(","),
-      description: truncate(skill.description, 72),
-    })),
-  );
+  for (const source of aggregated.sources) {
+    const sourceMatches = filtered.filter((skill) => skill.source.repo === source.repo && skill.source.ref === source.ref);
+    if (sourceMatches.length === 0) {
+      continue;
+    }
+    output.info(`Source: ${source.repo}@${source.ref}${source.label ? ` [${source.label}]` : ""}`);
+    printTable(
+      sourceMatches.map((skill) => ({
+        id: skill.id,
+        version: skill.version,
+        compatibility: skill.compatibility.join(","),
+        description: truncate(skill.description, 72),
+      })),
+    );
+    output.info("");
+  }
 }
 
 async function handleInstall(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
@@ -513,7 +548,7 @@ async function handleStatus(flags: CliFlags, userConfig: UserConfig): Promise<vo
   }
 
   const installedEntries = Object.entries(state.installed || {});
-  output.info(`Catalog      : ${state.catalog.repo}@${state.catalog.ref}`);
+  output.info(`Sources      : ${state.sources.map((source) => `${source.repo}@${source.ref}`).join(", ")}`);
   output.info(`Active adapter: ${state.adapters.active || "(none)"}`);
   output.info(`Auto-sync    : ${state.settings.autoSync ? "enabled" : "disabled"}`);
   output.info(`Sync mode    : ${state.syncMode || "(none)"}`);
@@ -561,19 +596,24 @@ async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<vo
       name: "lockfile",
       passed: false,
       message: "Lockfile not found",
-      hint: "Run: skillex init --repo <owner/repo>",
+      hint: "Run: skillex init",
     });
   }
 
-  // 2. Repo configured
-  if (state?.catalog?.repo) {
-    checks.push({ name: "repo", passed: true, message: `${state.catalog.repo}@${state.catalog.ref}` });
+  // 2. Sources configured
+  const stateSources = state?.sources ?? [];
+  if (stateSources.length > 0) {
+    checks.push({
+      name: "source",
+      passed: true,
+      message: stateSources.map((source) => `${source.repo}@${source.ref}`).join(", "),
+    });
   } else {
     checks.push({
-      name: "repo",
+      name: "source",
       passed: false,
-      message: "No catalog repository configured",
-      hint: "Run: skillex init --repo <owner/repo>",
+      message: "No catalog source configured",
+      hint: "Run: skillex init",
     });
   }
 
@@ -627,7 +667,7 @@ async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<vo
 
   // 6. Cache
   const cacheDir = path.join(statePaths.stateDir, ".cache");
-  if (state?.catalog?.repo) {
+  if ((state?.sources?.length ?? 0) > 0) {
     const source = await resolveProjectSource(opts);
     const cacheKey = computeCatalogCacheKey(source);
     const cached = await readCatalogCache(cacheDir, cacheKey);
@@ -645,7 +685,11 @@ async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<vo
   if (flags.json === true) {
     const jsonResult: Record<string, { passed: boolean; message: string; hint?: string }> = {};
     for (const check of checks) {
-      jsonResult[check.name] = { passed: check.passed, message: check.message, hint: check.hint };
+      jsonResult[check.name] = {
+        passed: check.passed,
+        message: check.message,
+        ...(check.hint ? { hint: check.hint } : {}),
+      };
     }
     output.info(JSON.stringify(jsonResult, null, 2));
   } else {
@@ -666,6 +710,66 @@ async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<vo
   if (anyFailed) {
     process.exitCode = 1;
   }
+}
+
+async function handleSource(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const subcommand = positionals[0];
+  const options = commonOptions(flags, userConfig);
+
+  if (!subcommand || subcommand === "help" || flags.help === true) {
+    output.info(COMMAND_HELP.source ?? "");
+    return;
+  }
+
+  if (subcommand === "list") {
+    const sources = await listProjectSources(options);
+    if (flags.json === true) {
+      output.info(JSON.stringify(sources, null, 2));
+      return;
+    }
+
+    printTable(
+      sources.map((source) => ({
+        repo: source.repo,
+        ref: source.ref,
+        label: source.label || "",
+      })),
+    );
+    return;
+  }
+
+  if (subcommand === "add") {
+    const repo = positionals[1];
+    if (!repo) {
+      throw new CliError("Usage: skillex source add <owner/repo>", "SOURCE_ADD_REQUIRES_REPO");
+    }
+
+    const lockfile = await addProjectSource(
+      {
+        repo,
+        ref: asOptionalString(flags.ref),
+        label: asOptionalString(flags.label),
+      },
+      options,
+    );
+    output.success(`Added source ${repo}`);
+    output.info(`Configured sources: ${lockfile.sources.length}`);
+    return;
+  }
+
+  if (subcommand === "remove") {
+    const repo = positionals[1];
+    if (!repo) {
+      throw new CliError("Usage: skillex source remove <owner/repo>", "SOURCE_REMOVE_REQUIRES_REPO");
+    }
+
+    const lockfile = await removeProjectSource(repo, options);
+    output.success(`Removed source ${repo}`);
+    output.info(`Configured sources: ${lockfile.sources.length}`);
+    return;
+  }
+
+  throw new CliError(`Unknown source subcommand: ${subcommand}.`, "SOURCE_UNKNOWN_SUBCOMMAND");
 }
 
 async function handleConfig(positionals: string[], flags: CliFlags): Promise<void> {
@@ -775,7 +879,7 @@ function cacheOptions(opts: ProjectOptions): { cacheDir: string; noCache?: boole
   const stateDir = path.join(cwd, opts.agentSkillsDir ?? DEFAULT_AGENT_SKILLS_DIR);
   return {
     cacheDir: path.join(stateDir, ".cache"),
-    noCache: opts.noCache,
+    ...(opts.noCache !== undefined ? { noCache: opts.noCache } : {}),
   };
 }
 
@@ -827,13 +931,14 @@ function printHelp(): void {
   output.info(`skillex — AI agent skill manager
 
 Commands:
-  skillex init --repo owner/repo [--ref main]
+  skillex init [--repo owner/repo] [--ref main]
   skillex list [--json]
   skillex search [query] [--compatibility claude] [--tag git]
   skillex install <skill-id... | owner/repo[@ref]> [--trust]
   skillex install --all
   skillex update [skill-id...]
   skillex remove <skill-id...>           aliases: rm, uninstall
+  skillex source <add|remove|list> [...]
   skillex sync [--adapter id] [--dry-run] [--mode copy]
   skillex run <skill-id:command> [--yes] [--timeout 30]
   skillex ui
@@ -843,7 +948,7 @@ Commands:
   skillex config get <key>
 
 Global flags:
-  --repo <owner/repo>   GitHub repository with skills
+  --repo <owner/repo>   GitHub repository with skills (default: lgili/skillex)
   --ref <ref>           Branch, tag, or commit (default: main)
   --adapter <id>        Force adapter: ${listAdapters()
     .map((a) => a.id)

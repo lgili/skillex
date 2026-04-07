@@ -7,7 +7,7 @@ export const DEFAULT_LOCAL_SKILLS_DIR = "skills";
 export const DEFAULT_GENERATED_DIR = "generated";
 export const DEFAULT_CATALOG_PATH = "catalog.json";
 export const DEFAULT_SKILLS_DIR = "skills";
-export const DEFAULT_REPO = "owner/repo";
+export const DEFAULT_REPO = "lgili/skillex";
 export const DEFAULT_REF = "main";
 
 /**

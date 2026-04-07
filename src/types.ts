@@ -112,6 +112,17 @@ export interface CatalogData {
 }
 
 /**
+ * Skill entry annotated with its originating catalog source.
+ */
+export interface SourcedSkillManifest extends SkillManifest {
+  source: {
+    repo: string;
+    ref: string;
+    label?: string | undefined;
+  };
+}
+
+/**
  * Clock function used to stamp lockfile updates during tests and runtime.
  */
 export type NowFn = () => string;
@@ -146,9 +157,10 @@ export interface InstalledSkill extends InstalledSkillMetadata {}
 /**
  * Catalog source persisted inside the local lockfile.
  */
-export interface LockfileCatalog {
+export interface LockfileSource {
   repo: string;
   ref: string;
+  label?: string | undefined;
 }
 
 /**
@@ -179,12 +191,30 @@ export interface LockfileState {
   formatVersion: number;
   createdAt: string;
   updatedAt: string;
-  catalog: LockfileCatalog;
+  sources: LockfileSource[];
   adapters: LockfileAdapters;
   settings: LockfileSettings;
   sync: SyncMetadata | null;
   syncMode: SyncWriteMode | null;
   installed: Record<string, InstalledSkillMetadata>;
+}
+
+/**
+ * Result of aggregating multiple remote catalogs.
+ */
+export interface AggregatedCatalogData {
+  formatVersion: number;
+  skills: SourcedSkillManifest[];
+  sources: Array<LockfileSource & { skillCount: number }>;
+}
+
+/**
+ * Result of resolving a skill id across configured sources.
+ */
+export interface ResolvedSkillSelection {
+  skill: SkillManifest;
+  catalog: CatalogData;
+  source: LockfileSource;
 }
 
 /**
