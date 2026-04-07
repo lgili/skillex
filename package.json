@@ -1,0 +1,42 @@
+{
+  "name": "@lgili/askill",
+  "version": "0.1.0",
+  "description": "Open Agent Skills CLI para listar, instalar e sincronizar skills de agentes a partir de um catalogo no GitHub.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lgili/askill.git"
+  },
+  "homepage": "https://github.com/lgili/askill#readme",
+  "bugs": {
+    "url": "https://github.com/lgili/askill/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "bin": {
+    "askill": "./bin/askill.js"
+  },
+  "scripts": {
+    "start": "node ./bin/askill.js",
+    "test": "node --test",
+    "prepublishOnly": "npm test"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "agent-skills",
+    "cli",
+    "github",
+    "codex",
+    "copilot",
+    "cursor"
+  ],
+  "license": "MIT"
+}
