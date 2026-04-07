@@ -1,6 +1,6 @@
 {
   "name": "@lgili/askill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Open Agent Skills CLI para listar, instalar e sincronizar skills de agentes a partir de um catalogo no GitHub.",
   "type": "module",
   "repository": {
