@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import * as nodeFs from "node:fs/promises";
+import * as path from "node:path";
 import {
   DEFAULT_CATALOG_PATH,
   DEFAULT_REF,
@@ -7,6 +10,7 @@ import {
 import { normalizeAdapterList } from "./adapters.js";
 import { assertSafeRelativePath } from "./fs.js";
 import { fetchJson, fetchOptionalJson, fetchText } from "./http.js";
+import { debug } from "./output.js";
 import type {
   CatalogData,
   CatalogSource,
@@ -16,6 +20,66 @@ import type {
   SkillManifest,
 } from "./types.js";
 import { CatalogError } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Catalog cache
+// ---------------------------------------------------------------------------
+
+interface CatalogCache {
+  expiresAt: string;
+  data: CatalogData;
+}
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Reads a cached catalog from disk.
+ *
+ * @param cacheDir - Directory where cache files are stored.
+ * @param cacheKey - Unique key for this catalog source.
+ * @returns Cached catalog data, or `null` if missing or expired.
+ */
+export async function readCatalogCache(cacheDir: string, cacheKey: string): Promise<CatalogData | null> {
+  const cachePath = path.join(cacheDir, `${cacheKey}.json`);
+  try {
+    const content = await nodeFs.readFile(cachePath, "utf-8");
+    const cache = JSON.parse(content) as CatalogCache;
+    if (new Date(cache.expiresAt).getTime() > Date.now()) {
+      return cache.data;
+    }
+    return null; // expired
+  } catch {
+    return null; // missing or invalid
+  }
+}
+
+/**
+ * Writes catalog data to the local cache with a 5-minute TTL.
+ *
+ * @param cacheDir - Directory where cache files are stored.
+ * @param cacheKey - Unique key for this catalog source.
+ * @param data - Catalog data to cache.
+ */
+export async function writeCatalogCache(cacheDir: string, cacheKey: string, data: CatalogData): Promise<void> {
+  const cachePath = path.join(cacheDir, `${cacheKey}.json`);
+  const cache: CatalogCache = {
+    expiresAt: new Date(Date.now() + CACHE_TTL_MS).toISOString(),
+    data,
+  };
+  await nodeFs.mkdir(cacheDir, { recursive: true });
+  await nodeFs.writeFile(cachePath, JSON.stringify(cache), "utf-8");
+}
+
+/**
+ * Computes a short, stable cache key for a catalog source URL.
+ *
+ * @param source - Resolved catalog source.
+ * @returns 16-character hex string.
+ */
+export function computeCatalogCacheKey(source: CatalogSource): string {
+  const url = source.catalogUrl ?? buildRawGitHubUrl(source.repo, source.ref, source.catalogPath);
+  return createHash("sha256").update(url).digest("hex").slice(0, 16);
+}
 
 interface GitTreeItem {
   path: string;
@@ -51,20 +115,35 @@ interface SkillCandidate {
 export async function loadCatalog(options: CatalogSourceInput = {}): Promise<CatalogData> {
   try {
     const source = resolveSource(options);
-    const catalogUrl = source.catalogUrl || buildRawGitHubUrl(source.repo, source.ref, source.catalogPath);
-    const remoteCatalog = await fetchOptionalJson<RemoteCatalog>(catalogUrl);
+    const cacheDir = options.cacheDir;
+    const cacheKey = computeCatalogCacheKey(source);
 
-    if (remoteCatalog) {
-      return normalizeCatalog(remoteCatalog, source);
+    // Check local cache first
+    if (cacheDir && !options.noCache) {
+      const cached = await readCatalogCache(cacheDir, cacheKey);
+      if (cached) {
+        debug(`Catalog cache hit for ${source.repo}@${source.ref}`);
+        return cached;
+      }
+      debug(`Catalog cache miss — fetching from network`);
     }
 
-    return await loadCatalogFromTree(source);
+    const catalogUrl = source.catalogUrl ?? buildRawGitHubUrl(source.repo, source.ref, source.catalogPath);
+    const remoteCatalog = await fetchOptionalJson<RemoteCatalog>(catalogUrl);
+    const result = remoteCatalog ? normalizeCatalog(remoteCatalog, source) : await loadCatalogFromTree(source);
+
+    // Write to cache (fire-and-forget; never fail the caller)
+    if (cacheDir) {
+      writeCatalogCache(cacheDir, cacheKey, result).catch(() => {});
+    }
+
+    return result;
   } catch (error) {
     if (error instanceof CatalogError) {
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new CatalogError(`Falha ao carregar catalogo: ${message}`);
+    throw new CatalogError(`Failed to load catalog: ${message}`);
   }
 }
 
@@ -97,19 +176,19 @@ export function resolveSource(options: CatalogSourceInput = {}): CatalogSource {
  */
 export function parseGitHubRepo(input: string): ParsedGitHubRepo {
   if (!input || !input.trim()) {
-    throw new CatalogError("Informe um repositorio GitHub no formato owner/repo ou uma URL do GitHub.", "INVALID_REPOSITORY");
+    throw new CatalogError("Provide a GitHub repository in owner/repo format or a GitHub URL.", "INVALID_REPOSITORY");
   }
 
   const trimmed = input.trim();
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     const url = new URL(trimmed);
     if (url.hostname !== "github.com") {
-      throw new CatalogError("Apenas URLs do github.com sao suportadas nesta versao.", "INVALID_REPOSITORY");
+      throw new CatalogError("Only github.com URLs are supported.", "INVALID_REPOSITORY");
     }
 
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts.length < 2) {
-      throw new CatalogError(`Nao foi possivel extrair owner/repo de "${trimmed}".`, "INVALID_REPOSITORY");
+      throw new CatalogError(`Could not extract owner/repo from "${trimmed}".`, "INVALID_REPOSITORY");
     }
 
     const result: ParsedGitHubRepo = { owner: parts[0]!, repo: parts[1]!, ref: null };
@@ -121,7 +200,7 @@ export function parseGitHubRepo(input: string): ParsedGitHubRepo {
 
   const parts = trimmed.split("/");
   if (parts.length !== 2) {
-    throw new CatalogError(`Repositorio invalido "${trimmed}". Use owner/repo.`, "INVALID_REPOSITORY");
+    throw new CatalogError(`Invalid repository "${trimmed}". Use owner/repo format.`, "INVALID_REPOSITORY");
   }
 
   return { owner: parts[0]!, repo: parts[1]!, ref: null };
@@ -201,7 +280,7 @@ async function loadCatalogFromTree(source: CatalogSource): Promise<CatalogData> 
 
   if (skillFiles.length === 0) {
     throw new CatalogError(
-      `Nenhum catalogo encontrado em ${source.repo}@${source.ref}. Esperado: ${source.catalogPath}, manifests em ${source.skillsDir}/*/skill.json ou pastas com SKILL.md.`,
+      `No catalog found at ${source.repo}@${source.ref}. Expected: ${source.catalogPath}, manifests at ${source.skillsDir}/*/skill.json, or folders containing SKILL.md.`,
       "CATALOG_NOT_FOUND",
     );
   }
@@ -280,7 +359,7 @@ function collectFilesUnderPath(treeFiles: GitTreeItem[], skillPath: string): str
 function normalizeCatalog(remoteCatalog: RemoteCatalog, source: CatalogSource): CatalogData {
   const remoteSkills = Array.isArray(remoteCatalog.skills) ? remoteCatalog.skills : [];
   if (remoteSkills.length === 0) {
-    throw new CatalogError("catalog.json encontrado, mas sem a chave skills preenchida.", "CATALOG_EMPTY");
+    throw new CatalogError("catalog.json found but the skills array is empty.", "CATALOG_EMPTY");
   }
 
   return {
@@ -294,7 +373,7 @@ function normalizeCatalog(remoteCatalog: RemoteCatalog, source: CatalogSource): 
 function normalizeSkill(skill: SkillCandidate, source: CatalogSource): SkillManifest {
   const id = skill.id || skill.slug;
   if (!id) {
-    throw new CatalogError("Toda skill precisa de um id.", "MALFORMED_SKILL");
+    throw new CatalogError("Every skill must have an id field.", "MALFORMED_SKILL");
   }
 
   const skillPath = skill.path || `${source.skillsDir}/${id}`;

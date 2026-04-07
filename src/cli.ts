@@ -1,6 +1,12 @@
 import * as path from "node:path";
 import { listAdapters } from "./adapters.js";
-import { loadCatalog, searchCatalogSkills } from "./catalog.js";
+import {
+  computeCatalogCacheKey,
+  loadCatalog,
+  readCatalogCache,
+  searchCatalogSkills,
+} from "./catalog.js";
+import { DEFAULT_AGENT_SKILLS_DIR, getStatePaths } from "./config.js";
 import {
   getInstalledSkills,
   initProject,
@@ -10,12 +16,177 @@ import {
   syncInstalledSkills,
   updateInstalledSkills,
 } from "./install.js";
+import * as output from "./output.js";
+import { setVerbose } from "./output.js";
 import { parseSkillCommandReference, runSkillScript } from "./runner.js";
 import { runInteractiveUi } from "./ui.js";
 import type { ParsedArgs, ProjectOptions, SearchOptions, SyncWriteMode } from "./types.js";
 import { CliError } from "./types.js";
+import { VALID_CONFIG_KEYS, readUserConfig, writeUserConfig } from "./user-config.js";
+import type { UserConfig } from "./user-config.js";
 
 type CliFlags = Record<string, string | boolean>;
+
+// ---------------------------------------------------------------------------
+// Per-command help text
+// ---------------------------------------------------------------------------
+
+const COMMAND_HELP: Record<string, string> = {
+  init: `Usage: skillex init --repo <owner/repo> [options]
+
+Initialize the local Skillex workspace.
+
+Options:
+  --repo <owner/repo>   GitHub repository with skills (required)
+  --ref <ref>           Branch, tag, or commit (default: main)
+  --adapter <id>        Force a specific adapter
+  --auto-sync           Enable auto-sync after install/update/remove
+  --cwd <path>          Target project directory (default: current directory)
+
+Example:
+  skillex init --repo myorg/my-skills`,
+
+  list: `Usage: skillex list [options]
+
+List all skills in the configured catalog.
+
+Options:
+  --repo <owner/repo>   GitHub repository (uses saved config if omitted)
+  --ref <ref>           Branch, tag, or commit
+  --no-cache            Bypass local catalog cache
+  --json                Output results as JSON
+
+Example:
+  skillex list
+  skillex list --repo myorg/my-skills --json`,
+
+  search: `Usage: skillex search [query] [options]
+
+Search skills by text, compatibility, or tags.
+
+Options:
+  --repo <owner/repo>   GitHub repository
+  --compatibility <id>  Filter by adapter compatibility
+  --tag <tag>           Filter by tag
+  --no-cache            Bypass local catalog cache
+  --json                Output results as JSON
+
+Example:
+  skillex search git --compatibility claude`,
+
+  install: `Usage: skillex install <skill-id...> [options]
+         skillex install --all [options]
+         skillex install <owner/repo[@ref]> [options]
+
+Install one or more skills from the catalog or directly from GitHub.
+
+Options:
+  --all                 Install all skills from the catalog
+  --repo <owner/repo>   GitHub repository
+  --ref <ref>           Branch, tag, or commit
+  --trust               Skip confirmation for direct GitHub installs
+  --adapter <id>        Target adapter
+  --no-cache            Bypass local catalog cache
+
+Example:
+  skillex install git-master code-review
+  skillex install --all --repo myorg/my-skills
+  skillex install octocat/my-skill@main --trust`,
+
+  update: `Usage: skillex update [skill-id...] [options]
+
+Update installed skills to the latest catalog version.
+
+Options:
+  --repo <owner/repo>   GitHub repository
+  --no-cache            Bypass local catalog cache
+
+Example:
+  skillex update
+  skillex update git-master`,
+
+  remove: `Usage: skillex remove <skill-id...>
+
+Remove installed skills from the local workspace.
+
+Example:
+  skillex remove git-master code-review`,
+
+  sync: `Usage: skillex sync [options]
+
+Synchronize installed skills to adapter target files.
+
+Options:
+  --adapter <id>        Target adapter (overrides saved config)
+  --dry-run             Preview changes without writing to disk
+  --mode <symlink|copy> Sync write mode (default: symlink)
+
+Example:
+  skillex sync
+  skillex sync --adapter cursor --dry-run`,
+
+  run: `Usage: skillex run <skill-id:command> [options]
+
+Execute a script bundled inside an installed skill.
+
+Options:
+  --yes                 Skip confirmation prompt
+  --timeout <seconds>   Script timeout in seconds (default: 30)
+
+Example:
+  skillex run git-master:cleanup --yes`,
+
+  ui: `Usage: skillex ui [options]
+
+Open the interactive terminal browser to browse and install skills.
+
+Options:
+  --repo <owner/repo>   GitHub repository
+  --no-cache            Bypass local catalog cache
+
+Example:
+  skillex ui`,
+
+  status: `Usage: skillex status [options]
+
+Show the installation status of the current workspace.
+
+Options:
+  --cwd <path>          Target project directory
+  --json                Output as JSON
+
+Example:
+  skillex status
+  skillex status --json`,
+
+  doctor: `Usage: skillex doctor [options]
+
+Run environment and configuration checks to diagnose issues.
+
+Options:
+  --json                Output results as JSON
+
+Example:
+  skillex doctor`,
+
+  config: `Usage: skillex config set <key> <value>
+         skillex config get <key>
+
+Manage global Skillex preferences stored in ~/.askillrc.json.
+CLI flags always take precedence over these values.
+
+Valid keys: ${VALID_CONFIG_KEYS.join(", ")}
+
+Precedence order: CLI flag > GITHUB_TOKEN env > global config > default
+
+Example:
+  skillex config set defaultRepo myorg/my-skills
+  skillex config get defaultRepo`,
+};
+
+// ---------------------------------------------------------------------------
+// Entrypoint
+// ---------------------------------------------------------------------------
 
 /**
  * Runs the Skillex CLI entrypoint.
@@ -26,64 +197,123 @@ type CliFlags = Record<string, string | boolean>;
 export async function main(argv: string[]): Promise<void> {
   const { command, positionals, flags } = parseArgs(argv);
 
-  switch (command) {
+  // Apply verbose flag early so debug output works from the start
+  if (flags.verbose === true || flags.v === true) {
+    setVerbose(true);
+  }
+
+  // Load global user config once at startup
+  const userConfig = await readUserConfig();
+
+  // Apply githubToken from user config as env fallback (env always wins)
+  if (userConfig.githubToken && !process.env.GITHUB_TOKEN) {
+    process.env.GITHUB_TOKEN = userConfig.githubToken;
+  }
+
+  // Per-command --help
+  if (flags.help === true && command && command !== "help") {
+    const helpText = COMMAND_HELP[command];
+    if (helpText) {
+      output.info(helpText);
+    } else {
+      printHelp();
+    }
+    return;
+  }
+
+  // Resolve command aliases
+  const resolvedCommand = resolveAlias(command);
+
+  switch (resolvedCommand) {
     case "help":
     case undefined:
       printHelp();
       return;
     case "init":
-      await handleInit(flags);
+      await handleInit(flags, userConfig);
       return;
     case "list":
-      await handleList(flags);
+      await handleList(flags, userConfig);
       return;
     case "search":
-      await handleSearch(positionals, flags);
+      await handleSearch(positionals, flags, userConfig);
       return;
     case "install":
-      await handleInstall(positionals, flags);
+      await handleInstall(positionals, flags, userConfig);
       return;
     case "update":
-      await handleUpdate(positionals, flags);
+      await handleUpdate(positionals, flags, userConfig);
       return;
     case "remove":
-      await handleRemove(positionals, flags);
+      await handleRemove(positionals, flags, userConfig);
       return;
     case "sync":
-      await handleSync(flags);
+      await handleSync(flags, userConfig);
       return;
     case "run":
-      await handleRun(positionals, flags);
+      await handleRun(positionals, flags, userConfig);
       return;
     case "ui":
-      await handleUi(flags);
+      await handleUi(flags, userConfig);
       return;
     case "status":
-      await handleStatus(flags);
+      await handleStatus(flags, userConfig);
+      return;
+    case "doctor":
+      await handleDoctor(flags, userConfig);
+      return;
+    case "config":
+      await handleConfig(positionals, flags);
       return;
     default:
-      throw new CliError(`Comando desconhecido: ${command}. Rode "skillex help" para ver os comandos.`);
+      throw new CliError(
+        `Unknown command: ${resolvedCommand}. Run "skillex help" to see available commands.`,
+      );
   }
 }
 
-async function handleInit(flags: CliFlags): Promise<void> {
-  const result = await initProject(commonOptions(flags));
-  if (result.created) {
-    console.log(`Inicializado em ${result.statePaths.stateDir}`);
-  } else {
-    console.log(`Ja existe configuracao em ${result.statePaths.stateDir}`);
+// ---------------------------------------------------------------------------
+// Command handlers
+// ---------------------------------------------------------------------------
+
+async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const repo = asOptionalString(flags.repo) ?? userConfig.defaultRepo;
+  if (!repo) {
+    throw new CliError(
+      "Missing required flag: --repo <owner/repo>\n\nExample: skillex init --repo myorg/my-skills",
+      "INIT_REQUIRES_REPO",
+    );
   }
+
+  const opts = commonOptions(flags, userConfig);
+  const result = await initProject({ ...opts, repo });
+
+  if (result.created) {
+    output.success(`Initialized at ${result.statePaths.stateDir}`);
+  } else {
+    output.info(`Already configured at ${result.statePaths.stateDir}`);
+  }
+
+  output.info(`  Catalog : ${result.lockfile.catalog.repo}@${result.lockfile.catalog.ref}`);
 
   if (result.lockfile.adapters.active) {
-    console.log(`Adapter ativo: ${result.lockfile.adapters.active}`);
+    output.info(`  Adapter : ${result.lockfile.adapters.active}`);
   } else {
-    console.log("Nenhum adapter detectado.");
+    output.warn(
+      "No adapter detected in this directory.\n" +
+        `  Use --adapter <id> to specify one. Available: ${listAdapters().map((a) => a.id).join(", ")}`,
+    );
   }
-  console.log(`Auto-sync: ${result.lockfile.settings.autoSync ? "enabled" : "disabled"}`);
+
+  output.info(`  Auto-sync: ${result.lockfile.settings.autoSync ? "enabled" : "disabled"}`);
+  output.info("\nNext: run 'skillex list' to browse available skills");
 }
 
-async function handleList(flags: CliFlags): Promise<void> {
-  const catalog = await loadCatalog(await resolveProjectSource(commonOptions(flags)));
+async function handleList(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const opts = commonOptions(flags, userConfig);
+  const source = await resolveProjectSource(opts);
+  const catalog = await loadCatalog({ ...source, ...cacheOptions(opts) });
+
   const rows = catalog.skills.map((skill) => ({
     id: skill.id,
     version: skill.version,
@@ -92,35 +322,43 @@ async function handleList(flags: CliFlags): Promise<void> {
   }));
 
   if (rows.length === 0) {
-    console.log("Nenhuma skill encontrada.");
+    output.info("No skills found.");
     return;
   }
 
-  console.log(`Catalogo: ${catalog.repo}@${catalog.ref}`);
+  if (flags.json === true) {
+    output.info(JSON.stringify(catalog.skills, null, 2));
+    return;
+  }
+
+  output.info(`Catalog: ${catalog.repo}@${catalog.ref}`);
   printTable(rows);
 }
 
-async function handleSearch(positionals: string[], flags: CliFlags): Promise<void> {
-  const catalog = await loadCatalog(await resolveProjectSource(commonOptions(flags)));
-  const searchOptions: SearchOptions = {
-    query: positionals.join(" "),
-  };
+async function handleSearch(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const opts = commonOptions(flags, userConfig);
+  const source = await resolveProjectSource(opts);
+  const catalog = await loadCatalog({ ...source, ...cacheOptions(opts) });
+
+  const searchOptions: SearchOptions = { query: positionals.join(" ") };
   const compatibility = asOptionalString(flags.compatibility);
   const tag = asOptionalString(flags.tag);
-  if (compatibility) {
-    searchOptions.compatibility = compatibility;
-  }
-  if (tag) {
-    searchOptions.tags = tag;
-  }
+  if (compatibility) searchOptions.compatibility = compatibility;
+  if (tag) searchOptions.tags = tag;
+
   const filtered = searchCatalogSkills(catalog.skills, searchOptions);
 
   if (filtered.length === 0) {
-    console.log("Nenhuma skill corresponde aos filtros informados.");
+    output.info("No skills match the given filters.");
     return;
   }
 
-  console.log(`Catalogo: ${catalog.repo}@${catalog.ref}`);
+  if (flags.json === true) {
+    output.info(JSON.stringify(filtered, null, 2));
+    return;
+  }
+
+  output.info(`Catalog: ${catalog.repo}@${catalog.ref}`);
   printTable(
     filtered.map((skill) => ({
       id: skill.id,
@@ -131,79 +369,87 @@ async function handleSearch(positionals: string[], flags: CliFlags): Promise<voi
   );
 }
 
-async function handleInstall(positionals: string[], flags: CliFlags): Promise<void> {
+async function handleInstall(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const installAll = Boolean(flags.all);
+  const opts = commonOptions(flags, userConfig);
   const result = await installSkills(positionals, {
-    ...commonOptions(flags),
+    ...opts,
     installAll,
+    onProgress: (current, total, skillId) => {
+      output.info(`[${current}/${total}] Installing ${skillId}...`);
+    },
   });
 
-  console.log(`Instaladas ${result.installedCount} skill(s) em ${result.statePaths.stateDir}`);
+  output.success(`Installed ${result.installedCount} skill(s) to ${result.statePaths.stateDir}`);
   for (const skill of result.installedSkills) {
-    console.log(`- ${skill.id}@${skill.version}`);
+    output.info(`  + ${skill.id}@${skill.version}`);
   }
   printAutoSyncResult(result.autoSync);
 }
 
-async function handleUpdate(positionals: string[], flags: CliFlags): Promise<void> {
-  const result = await updateInstalledSkills(positionals, commonOptions(flags));
+async function handleUpdate(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const opts = commonOptions(flags, userConfig);
+  const result = await updateInstalledSkills(positionals, opts);
+
   if (result.updatedSkills.length === 0) {
-    console.log("Nenhuma skill atualizada.");
+    output.info("No skills updated.");
   } else {
-    console.log(`Atualizadas ${result.updatedSkills.length} skill(s) em ${result.statePaths.stateDir}`);
+    output.success(`Updated ${result.updatedSkills.length} skill(s)`);
     for (const skill of result.updatedSkills) {
-      console.log(`- ${skill.id}@${skill.version}`);
+      output.info(`  ↑ ${skill.id}@${skill.version}`);
     }
   }
 
   for (const skillId of result.missingFromCatalog) {
-    console.log(`- ${skillId} nao existe mais no catalogo remoto`);
+    output.warn(`${skillId} no longer exists in the remote catalog`);
   }
   printAutoSyncResult(result.autoSync);
 }
 
-async function handleRemove(positionals: string[], flags: CliFlags): Promise<void> {
-  const result = await removeSkills(positionals, commonOptions(flags));
+async function handleRemove(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const result = await removeSkills(positionals, commonOptions(flags, userConfig));
+
   if (result.removedSkills.length > 0) {
-    console.log(`Removidas ${result.removedSkills.length} skill(s) de ${result.statePaths.stateDir}`);
+    output.success(`Removed ${result.removedSkills.length} skill(s)`);
     for (const skillId of result.removedSkills) {
-      console.log(`- ${skillId}`);
+      output.info(`  - ${skillId}`);
     }
   }
 
   for (const skillId of result.missingSkills) {
-    console.log(`- ${skillId} nao esta instalado`);
+    output.warn(`${skillId} is not installed`);
   }
   printAutoSyncResult(result.autoSync);
 }
 
-async function handleSync(flags: CliFlags): Promise<void> {
-  const result = await syncInstalledSkills(commonOptions(flags));
+async function handleSync(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const result = await syncInstalledSkills(commonOptions(flags, userConfig));
+
   if (result.dryRun) {
-    console.log(`Preview de ${result.skillCount} skill(s) para ${result.sync.adapter}`);
-    console.log(`Arquivo alvo: ${result.sync.targetPath}`);
-    console.log(`Modo de sync: ${result.syncMode}`);
+    output.info(`Preview: ${result.skillCount} skill(s) → ${result.sync.adapter}`);
+    output.info(`Target file : ${result.sync.targetPath}`);
+    output.info(`Sync mode   : ${result.syncMode}`);
     process.stdout.write(result.diff);
     return;
   }
 
-  console.log(`Sincronizadas ${result.skillCount} skill(s) para ${result.sync.adapter}`);
-  console.log(`Arquivo alvo: ${result.sync.targetPath}`);
-  console.log(`Modo de sync: ${result.syncMode}`);
+  output.success(`Synced ${result.skillCount} skill(s) → ${result.sync.adapter}`);
+  output.info(`Target file : ${result.sync.targetPath}`);
+  output.info(`Sync mode   : ${result.syncMode}`);
   if (!result.changed) {
-    console.log("Sem alteracoes no arquivo alvo.");
+    output.info("No changes to the target file.");
   }
 }
 
-async function handleRun(positionals: string[], flags: CliFlags): Promise<void> {
+async function handleRun(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const target = positionals[0];
   if (!target) {
-    throw new CliError('Informe o alvo no formato "skill-id:comando".', "RUN_REQUIRES_TARGET");
+    throw new CliError('Provide a target in the format "skill-id:command".', "RUN_REQUIRES_TARGET");
   }
 
   const parsed = parseSkillCommandReference(target);
   const exitCode = await runSkillScript(parsed.skillId, parsed.command, {
-    ...commonOptions(flags),
+    ...commonOptions(flags, userConfig),
     yes: parseBooleanFlag(flags.yes) || false,
     timeout: parsePositiveInt(asOptionalString(flags.timeout)),
   });
@@ -212,73 +458,73 @@ async function handleRun(positionals: string[], flags: CliFlags): Promise<void> 
   }
 }
 
-async function handleUi(flags: CliFlags): Promise<void> {
-  const options = commonOptions(flags);
+async function handleUi(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const options = commonOptions(flags, userConfig);
   const state = await getInstalledSkills(options);
-  const catalog = await loadCatalog(await resolveProjectSource(options));
+  const source = await resolveProjectSource(options);
+  const catalog = await loadCatalog({ ...source, ...cacheOptions(options) });
+
   if (catalog.skills.length === 0) {
-    console.log("Nenhuma skill disponivel no catalogo.");
+    output.info("No skills available in the catalog.");
     return;
   }
 
   const installedIds = Object.keys(state?.installed || {});
-  const selection = await runInteractiveUi({
-    skills: catalog.skills,
-    installedIds,
-  });
+  const selection = await runInteractiveUi({ skills: catalog.skills, installedIds });
 
   if (selection.visibleIds.length === 0) {
-    console.log(
+    output.info(
       selection.query
-        ? `Nenhuma skill corresponde ao filtro "${selection.query}".`
-        : "Nenhuma skill disponivel no catalogo.",
+        ? `No skills match the filter "${selection.query}".`
+        : "No skills available in the catalog.",
     );
     return;
   }
 
   const installResult =
-    selection.toInstall.length > 0
-      ? await installSkills(selection.toInstall, options)
-      : null;
+    selection.toInstall.length > 0 ? await installSkills(selection.toInstall, options) : null;
   const removeResult =
-    selection.toRemove.length > 0
-      ? await removeSkills(selection.toRemove, options)
-      : null;
+    selection.toRemove.length > 0 ? await removeSkills(selection.toRemove, options) : null;
 
   if (!installResult && !removeResult) {
-    console.log("Nenhuma alteracao aplicada.");
+    output.info("No changes applied.");
     return;
   }
 
-  console.log("Resumo do UI:");
+  output.success("UI summary:");
   if (installResult) {
-    console.log(`- Instaladas: ${installResult.installedSkills.map((skill) => skill.id).join(", ")}`);
+    output.info(`  Installed : ${installResult.installedSkills.map((s) => s.id).join(", ")}`);
   }
   if (removeResult) {
-    console.log(`- Removidas: ${removeResult.removedSkills.join(", ")}`);
+    output.info(`  Removed   : ${removeResult.removedSkills.join(", ")}`);
   }
 }
 
-async function handleStatus(flags: CliFlags): Promise<void> {
-  const state = await getInstalledSkills(commonOptions(flags));
+async function handleStatus(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const state = await getInstalledSkills(commonOptions(flags, userConfig));
   if (!state) {
-    console.log("Nenhuma instalacao local encontrada. Rode: skillex init");
+    output.warn("No local installation found. Run: skillex init");
+    return;
+  }
+
+  if (flags.json === true) {
+    output.info(JSON.stringify(state, null, 2));
     return;
   }
 
   const installedEntries = Object.entries(state.installed || {});
-  console.log(`Catalogo configurado: ${state.catalog.repo}@${state.catalog.ref}`);
-  console.log(`Adapter ativo: ${state.adapters.active || "(nenhum)"}`);
-  console.log(`Auto-sync: ${state.settings.autoSync ? "enabled" : "disabled"}`);
-  console.log(`Sync mode: ${state.syncMode || "(nenhum)"}`);
+  output.info(`Catalog      : ${state.catalog.repo}@${state.catalog.ref}`);
+  output.info(`Active adapter: ${state.adapters.active || "(none)"}`);
+  output.info(`Auto-sync    : ${state.settings.autoSync ? "enabled" : "disabled"}`);
+  output.info(`Sync mode    : ${state.syncMode || "(none)"}`);
   if (state.adapters.detected.length > 0) {
-    console.log(`Adapters detectados: ${state.adapters.detected.join(", ")}`);
+    output.info(`Detected     : ${state.adapters.detected.join(", ")}`);
   }
   if (state.sync) {
-    console.log(`Ultimo sync: ${state.sync.adapter} -> ${state.sync.targetPath} em ${state.sync.syncedAt}`);
+    output.info(`Last sync    : ${state.sync.adapter} → ${state.sync.targetPath} at ${state.sync.syncedAt}`);
   }
   if (installedEntries.length === 0) {
-    console.log("Nenhuma skill instalada.");
+    output.info("No skills installed.");
     return;
   }
 
@@ -292,66 +538,245 @@ async function handleStatus(flags: CliFlags): Promise<void> {
   );
 }
 
-function commonOptions(flags: CliFlags): ProjectOptions {
+async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const opts = commonOptions(flags, userConfig);
+  const cwd = opts.cwd ?? process.cwd();
+  const statePaths = getStatePaths(cwd, opts.agentSkillsDir ?? DEFAULT_AGENT_SKILLS_DIR);
+
+  interface DoctorCheck {
+    name: string;
+    passed: boolean;
+    message: string;
+    hint?: string;
+  }
+
+  const checks: DoctorCheck[] = [];
+
+  // 1. Lockfile
+  const state = await getInstalledSkills(opts);
+  if (state) {
+    checks.push({ name: "lockfile", passed: true, message: `Found at ${statePaths.lockfilePath}` });
+  } else {
+    checks.push({
+      name: "lockfile",
+      passed: false,
+      message: "Lockfile not found",
+      hint: "Run: skillex init --repo <owner/repo>",
+    });
+  }
+
+  // 2. Repo configured
+  if (state?.catalog?.repo) {
+    checks.push({ name: "repo", passed: true, message: `${state.catalog.repo}@${state.catalog.ref}` });
+  } else {
+    checks.push({
+      name: "repo",
+      passed: false,
+      message: "No catalog repository configured",
+      hint: "Run: skillex init --repo <owner/repo>",
+    });
+  }
+
+  // 3. Adapter detected
+  const hasAdapter = Boolean(state?.adapters?.active || (state?.adapters?.detected?.length ?? 0) > 0);
+  if (hasAdapter) {
+    const adapter = state?.adapters?.active ?? state?.adapters?.detected?.[0];
+    checks.push({ name: "adapter", passed: true, message: `Active: ${adapter}` });
+  } else {
+    checks.push({
+      name: "adapter",
+      passed: false,
+      message: "No adapter detected",
+      hint: `Use --adapter <id>. Available: ${listAdapters().map((a) => a.id).join(", ")}`,
+    });
+  }
+
+  // 4. GitHub reachable
+  try {
+    const response = await fetch("https://api.github.com", {
+      method: "HEAD",
+      headers: { "User-Agent": "skillex" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.status < 500) {
+      checks.push({ name: "github", passed: true, message: "GitHub API is reachable" });
+    } else {
+      checks.push({
+        name: "github",
+        passed: false,
+        message: `GitHub API returned ${response.status}`,
+        hint: "Try again in a moment.",
+      });
+    }
+  } catch {
+    checks.push({
+      name: "github",
+      passed: false,
+      message: "GitHub API is unreachable",
+      hint: "Check your internet connection or proxy settings.",
+    });
+  }
+
+  // 5. GitHub token (warning only — never fails)
+  const token = process.env.GITHUB_TOKEN;
+  if (token) {
+    checks.push({ name: "token", passed: true, message: "GitHub token set (authenticated — 5,000 req/hr)" });
+  } else {
+    checks.push({ name: "token", passed: true, message: "No GitHub token (unauthenticated — 60 req/hr)" });
+  }
+
+  // 6. Cache
+  const cacheDir = path.join(statePaths.stateDir, ".cache");
+  if (state?.catalog?.repo) {
+    const source = await resolveProjectSource(opts);
+    const cacheKey = computeCatalogCacheKey(source);
+    const cached = await readCatalogCache(cacheDir, cacheKey);
+    if (cached) {
+      checks.push({ name: "cache", passed: true, message: "Catalog cache is fresh" });
+    } else {
+      checks.push({ name: "cache", passed: true, message: "No cached catalog (will fetch on next command)" });
+    }
+  } else {
+    checks.push({ name: "cache", passed: true, message: "Cache not checked (no repo configured)" });
+  }
+
+  const anyFailed = checks.some((c) => !c.passed);
+
+  if (flags.json === true) {
+    const jsonResult: Record<string, { passed: boolean; message: string; hint?: string }> = {};
+    for (const check of checks) {
+      jsonResult[check.name] = { passed: check.passed, message: check.message, hint: check.hint };
+    }
+    output.info(JSON.stringify(jsonResult, null, 2));
+  } else {
+    for (const check of checks) {
+      const symbol = check.passed ? "✓" : "✗";
+      const line = `${symbol} ${check.name.padEnd(10)} ${check.message}`;
+      if (check.passed) {
+        output.info(line);
+      } else {
+        output.error(line);
+        if (check.hint) {
+          output.info(`           Hint: ${check.hint}`);
+        }
+      }
+    }
+  }
+
+  if (anyFailed) {
+    process.exitCode = 1;
+  }
+}
+
+async function handleConfig(positionals: string[], flags: CliFlags): Promise<void> {
+  const subcommand = positionals[0];
+
+  if (!subcommand || subcommand === "help" || flags.help === true) {
+    output.info(COMMAND_HELP.config ?? "");
+    return;
+  }
+
+  if (subcommand === "get") {
+    const key = positionals[1] as keyof UserConfig | undefined;
+    if (!key) {
+      throw new CliError("Usage: skillex config get <key>", "CONFIG_GET_REQUIRES_KEY");
+    }
+    if (!VALID_CONFIG_KEYS.includes(key)) {
+      throw new CliError(
+        `Unknown config key: ${key}. Valid keys: ${VALID_CONFIG_KEYS.join(", ")}`,
+        "CONFIG_INVALID_KEY",
+      );
+    }
+    const config = await readUserConfig();
+    const value = config[key];
+    output.info(value !== undefined ? String(value) : "(not set)");
+    return;
+  }
+
+  if (subcommand === "set") {
+    const key = positionals[1] as keyof UserConfig | undefined;
+    const value = positionals[2];
+    if (!key || value === undefined) {
+      throw new CliError("Usage: skillex config set <key> <value>", "CONFIG_SET_REQUIRES_KEY_VALUE");
+    }
+    if (!VALID_CONFIG_KEYS.includes(key)) {
+      throw new CliError(
+        `Unknown config key: ${key}. Valid keys: ${VALID_CONFIG_KEYS.join(", ")}`,
+        "CONFIG_INVALID_KEY",
+      );
+    }
+    // Coerce boolean keys
+    const coerced: string | boolean = key === "disableAutoSync" ? value === "true" : value;
+    await writeUserConfig({ [key]: coerced });
+    output.success(`Set ${key} = ${coerced} in ~/.askillrc.json`);
+    return;
+  }
+
+  throw new CliError(
+    `Unknown config subcommand: ${subcommand}. Use "get" or "set".`,
+    "CONFIG_UNKNOWN_SUBCOMMAND",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function resolveAlias(command: string | undefined): string | undefined {
+  const ALIASES: Record<string, string> = {
+    ls: "list",
+    rm: "remove",
+    uninstall: "remove",
+  };
+  return command !== undefined ? (ALIASES[command] ?? command) : undefined;
+}
+
+function commonOptions(flags: CliFlags, userConfig: UserConfig = {}): ProjectOptions {
   const options: ProjectOptions = {
     cwd: path.resolve(asOptionalString(flags.cwd) || process.cwd()),
   };
 
-  const repo = asOptionalString(flags.repo);
+  const repo = asOptionalString(flags.repo) ?? userConfig.defaultRepo;
   const ref = asOptionalString(flags.ref);
   const catalogPath = asOptionalString(flags["catalog-path"]);
   const catalogUrl = asOptionalString(flags["catalog-url"]);
   const skillsDir = asOptionalString(flags["skills-dir"]);
   const agentSkillsDir = asOptionalString(flags["agent-skills-dir"]);
-  const adapter = asOptionalString(flags.adapter);
-  const autoSync = parseBooleanFlag(flags["auto-sync"]);
+  const adapter = asOptionalString(flags.adapter) ?? userConfig.defaultAdapter;
+  const autoSync = parseBooleanFlag(flags["auto-sync"]) ?? (userConfig.disableAutoSync ? false : undefined);
   const dryRun = parseBooleanFlag(flags["dry-run"]);
   const trust = parseBooleanFlag(flags.trust);
   const yes = parseBooleanFlag(flags.yes);
   const mode = parseSyncMode(asOptionalString(flags.mode));
   const timeout = parsePositiveInt(asOptionalString(flags.timeout));
+  const noCache = parseBooleanFlag(flags["no-cache"]);
 
-  if (repo) {
-    options.repo = repo;
-  }
-  if (ref) {
-    options.ref = ref;
-  }
-  if (catalogPath) {
-    options.catalogPath = catalogPath;
-  }
-  if (catalogUrl) {
-    options.catalogUrl = catalogUrl;
-  }
-  if (skillsDir) {
-    options.skillsDir = skillsDir;
-  }
-  if (agentSkillsDir) {
-    options.agentSkillsDir = agentSkillsDir;
-  }
-  if (adapter) {
-    options.adapter = adapter;
-  }
-  if (autoSync !== undefined) {
-    options.autoSync = autoSync;
-  }
-  if (dryRun !== undefined) {
-    options.dryRun = dryRun;
-  }
-  if (trust !== undefined) {
-    options.trust = trust;
-  }
-  if (yes !== undefined) {
-    options.yes = yes;
-  }
-  if (mode) {
-    options.mode = mode;
-  }
-  if (timeout !== undefined) {
-    options.timeout = timeout;
-  }
+  if (repo) options.repo = repo;
+  if (ref) options.ref = ref;
+  if (catalogPath) options.catalogPath = catalogPath;
+  if (catalogUrl) options.catalogUrl = catalogUrl;
+  if (skillsDir) options.skillsDir = skillsDir;
+  if (agentSkillsDir) options.agentSkillsDir = agentSkillsDir;
+  if (adapter) options.adapter = adapter;
+  if (autoSync !== undefined) options.autoSync = autoSync;
+  if (dryRun !== undefined) options.dryRun = dryRun;
+  if (trust !== undefined) options.trust = trust;
+  if (yes !== undefined) options.yes = yes;
+  if (mode) options.mode = mode;
+  if (timeout !== undefined) options.timeout = timeout;
+  if (noCache !== undefined) options.noCache = noCache;
 
   return options;
+}
+
+/** Returns cache-related options to spread into a loadCatalog call. */
+function cacheOptions(opts: ProjectOptions): { cacheDir: string; noCache?: boolean } {
+  const cwd = opts.cwd ?? process.cwd();
+  const stateDir = path.join(cwd, opts.agentSkillsDir ?? DEFAULT_AGENT_SKILLS_DIR);
+  return {
+    cacheDir: path.join(stateDir, ".cache"),
+    noCache: opts.noCache,
+  };
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -361,19 +786,21 @@ function parseArgs(argv: string[]): ParsedArgs {
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
-    if (token === undefined) {
-      continue;
-    }
+    if (token === undefined) continue;
+
     if (!command && !token.startsWith("-")) {
       command = token;
       continue;
     }
 
+    if (token === "-v") {
+      flags.verbose = true;
+      continue;
+    }
+
     if (token.startsWith("--")) {
       const [rawKey, inlineValue] = token.slice(2).split("=", 2);
-      if (!rawKey) {
-        continue;
-      }
+      if (!rawKey) continue;
       if (inlineValue !== undefined) {
         flags[rawKey] = inlineValue;
         continue;
@@ -393,48 +820,41 @@ function parseArgs(argv: string[]): ParsedArgs {
     positionals.push(token);
   }
 
-  return {
-    command,
-    positionals,
-    flags,
-  };
+  return { command, positionals, flags };
 }
 
 function printHelp(): void {
-  console.log(`skillex
+  output.info(`skillex — AI agent skill manager
 
-Comandos:
+Commands:
   skillex init --repo owner/repo [--ref main]
-  skillex list --repo owner/repo [--ref main]
-  skillex search [texto] --repo owner/repo [--compatibility codex]
-  skillex install <skill-id... | owner/repo[@ref]>
-  skillex install --all --repo owner/repo [--ref main]
+  skillex list [--json]
+  skillex search [query] [--compatibility claude] [--tag git]
+  skillex install <skill-id... | owner/repo[@ref]> [--trust]
+  skillex install --all
   skillex update [skill-id...]
-  skillex remove <skill-id...>
-  skillex sync [--adapter codex] [--dry-run] [--mode copy]
-  skillex run <skill-id:comando> [--yes] [--timeout 30]
+  skillex remove <skill-id...>           aliases: rm, uninstall
+  skillex sync [--adapter id] [--dry-run] [--mode copy]
+  skillex run <skill-id:command> [--yes] [--timeout 30]
   skillex ui
-  skillex status
+  skillex status [--json]
+  skillex doctor [--json]
+  skillex config set <key> <value>
+  skillex config get <key>
 
-Flags:
-  --repo               Repositorio GitHub no formato owner/repo
-  --ref                Branch, tag ou commit. Padrao: main
-  --catalog-path       Caminho do catalogo no repo. Padrao: catalog.json
-  --catalog-url        URL direta para o catalogo remoto
-  --skills-dir         Pasta remota das skills. Padrao: skills
-  --agent-skills-dir   Pasta local gerenciada. Padrao: .agent-skills
-  --cwd                Projeto alvo. Padrao: diretorio atual
-  --adapter            Adapter forçado: ${listAdapters().map((adapter) => adapter.id).join(", ")}
-  --auto-sync          Habilita sync automatico no workspace
-  --dry-run            Faz preview/diff sem escrever no disco
-  --mode               Modo de sync: symlink ou copy
-  --compatibility      Filtra skills por compatibilidade
-  --tag                Filtra skills por tags
-  --all                Instala todas as skills do catalogo
-  --trust              Aceita instalar skill direta do GitHub sem confirmacao
-  --yes                Pula confirmacao para o comando run
-  --timeout            Timeout em segundos para scripts executados via run
-`);
+Global flags:
+  --repo <owner/repo>   GitHub repository with skills
+  --ref <ref>           Branch, tag, or commit (default: main)
+  --adapter <id>        Force adapter: ${listAdapters()
+    .map((a) => a.id)
+    .join(", ")}
+  --cwd <path>          Project directory (default: current)
+  --verbose, -v         Enable debug output
+  --json                Machine-readable JSON output
+  --no-cache            Bypass local catalog cache
+  --dry-run             Preview without writing to disk
+
+Run "skillex <command> --help" for command-specific usage.`);
 }
 
 function printTable(rows: Array<Record<string, string | number | boolean | null | undefined>>): void {
@@ -442,80 +862,55 @@ function printTable(rows: Array<Record<string, string | number | boolean | null 
   const widths: number[] = columns.map((column) =>
     Math.max(column.length, ...rows.map((row) => String(row[column] ?? "").length)),
   );
-
-  console.log(columns.map((column, index) => column.padEnd(widths[index] ?? 0)).join("  "));
-  console.log(widths.map((size) => "-".repeat(size)).join("  "));
+  output.info(columns.map((column, index) => column.padEnd(widths[index] ?? 0)).join("  "));
+  output.info(widths.map((size) => "-".repeat(size)).join("  "));
   for (const row of rows) {
-    console.log(
-      columns
-        .map((column, index) => String(row[column] ?? "").padEnd(widths[index] ?? 0))
-        .join("  "),
+    output.info(
+      columns.map((column, index) => String(row[column] ?? "").padEnd(widths[index] ?? 0)).join("  "),
     );
   }
 }
 
 function truncate(value: string, maxLength: number): string {
-  if (!value || value.length <= maxLength) {
-    return value;
-  }
+  if (!value || value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 3)}...`;
 }
 
 function parseBooleanFlag(value: string | boolean | undefined): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-
-  if (value === true) {
-    return true;
-  }
-
+  if (value === undefined) return undefined;
+  if (value === true) return true;
   const normalized = String(value).trim().toLowerCase();
-  if (["true", "1", "yes", "on"].includes(normalized)) {
-    return true;
-  }
-  if (["false", "0", "no", "off"].includes(normalized)) {
-    return false;
-  }
-
-  throw new CliError(`Valor booleano invalido: ${value}`, "INVALID_BOOLEAN_FLAG");
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  throw new CliError(`Invalid boolean value: ${value}`, "INVALID_BOOLEAN_FLAG");
 }
 
 function parsePositiveInt(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
+  if (!value) return undefined;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new CliError(`Valor numerico invalido: ${value}`, "INVALID_NUMBER_FLAG");
+    throw new CliError(`Invalid numeric value: ${value}`, "INVALID_NUMBER_FLAG");
   }
   return parsed;
 }
 
 function parseSyncMode(value: string | undefined): SyncWriteMode | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  if (value === "copy" || value === "symlink") {
-    return value;
-  }
-
-  throw new CliError(`Modo de sync invalido: ${value}`, "INVALID_SYNC_MODE");
+  if (!value) return undefined;
+  if (value === "copy" || value === "symlink") return value;
+  throw new CliError(`Invalid sync mode: ${value}. Use "symlink" or "copy".`, "INVALID_SYNC_MODE");
 }
 
 function printAutoSyncResult(
-  result: Awaited<ReturnType<typeof installSkills>>["autoSync"] |
-    Awaited<ReturnType<typeof updateInstalledSkills>>["autoSync"] |
-    Awaited<ReturnType<typeof removeSkills>>["autoSync"],
+  result:
+    | Awaited<ReturnType<typeof installSkills>>["autoSync"]
+    | Awaited<ReturnType<typeof updateInstalledSkills>>["autoSync"]
+    | Awaited<ReturnType<typeof removeSkills>>["autoSync"],
 ): void {
-  if (!result) {
-    return;
-  }
-
-  const suffix = result.changed ? "" : " (sem alteracoes)";
-  console.log(`Auto-sync: ${result.sync.adapter} -> ${result.sync.targetPath} [${result.syncMode}]${suffix}`);
+  if (!result) return;
+  const suffix = result.changed ? "" : " (no changes)";
+  output.info(
+    `Auto-sync: ${result.sync.adapter} → ${result.sync.targetPath} [${result.syncMode}]${suffix}`,
+  );
 }
 
 function asOptionalString(value: string | boolean | undefined): string | undefined {

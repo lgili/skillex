@@ -64,6 +64,10 @@ export interface CatalogSourceInput {
   catalogPath?: string | undefined;
   skillsDir?: string | undefined;
   catalogUrl?: string | null | undefined;
+  /** Directory to store catalog cache files. Caching is skipped when absent. */
+  cacheDir?: string | undefined;
+  /** When `true`, bypass the local catalog cache and always fetch from the network. */
+  noCache?: boolean | undefined;
 }
 
 /**
@@ -207,6 +211,10 @@ export interface ProjectOptions extends CatalogSourceInput {
   yes?: boolean | undefined;
   timeout?: number | undefined;
   now?: NowFn | undefined;
+  /** When `true`, enables verbose debug output. */
+  verbose?: boolean | undefined;
+  /** Progress callback invoked for each skill during installation. */
+  onProgress?: ((current: number, total: number, skillId: string) => void) | undefined;
 }
 
 /**
@@ -451,7 +459,7 @@ export class AdapterNotFoundError extends SkillexError {
    * Creates an adapter lookup error.
    */
   constructor(adapterId: string) {
-    super(`Adapter desconhecido: ${adapterId}`, "ADAPTER_NOT_FOUND");
+    super(`Unknown adapter: ${adapterId}`, "ADAPTER_NOT_FOUND");
   }
 }
 

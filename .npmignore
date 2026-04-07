@@ -1,0 +1,27 @@
+# Development and test files — excluded from npm publish
+test/
+.test-dist/
+openspec/
+skills/
+.github/
+
+# TypeScript source (dist/ is published instead)
+src/
+tsconfig*.json
+
+# Documentation not needed by consumers
+CONTRIBUTING.md
+SECURITY.md
+
+# Editor and local config
+.vscode/
+.idea/
+*.local
+
+# Logs and caches
+*.log
+.agent-skills/
+
+# OS metadata
+.DS_Store
+Thumbs.db

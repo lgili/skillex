@@ -88,15 +88,22 @@ export async function initProject(options: ProjectOptions = {}): Promise<InitPro
     lockfile.settings.autoSync = options.autoSync ?? lockfile.settings.autoSync;
     if (lockfile.settings.autoSync && !lockfile.adapters.active) {
       throw new InstallError(
-        "Auto-sync exige um adapter ativo. Use --adapter <id> ou rode em um workspace detectavel.",
+        "Auto-sync requires an active adapter. Use --adapter <id> or run in a detectable workspace.",
         "AUTO_SYNC_REQUIRES_ADAPTER",
       );
     }
     lockfile.updatedAt = now();
     await writeJson(statePaths.lockfilePath, lockfile);
+
+    // Create .gitignore for the state directory on first init
+    const gitignorePath = path.join(statePaths.stateDir, ".gitignore");
+    if (!(await pathExists(gitignorePath))) {
+      await writeText(gitignorePath, ".cache/\n*.log\n");
+    }
+
     return { created: !existing, statePaths, lockfile };
   } catch (error) {
-    throw toInstallError(error, "Falha ao inicializar o projeto");
+    throw toInstallError(error, "Failed to initialize project");
   }
 }
 
@@ -140,13 +147,16 @@ export async function installSkills(
     const installedSkills: SkillManifest[] = [];
 
     if (options.installAll && directRefs.length > 0) {
-      throw new InstallError("Nao misture --all com referencias diretas do GitHub.", "INSTALL_ALL_WITH_DIRECT_REF");
+      throw new InstallError("Do not mix --all with direct GitHub references.", "INSTALL_ALL_WITH_DIRECT_REF");
     }
 
     if (options.installAll || catalogIds.length > 0) {
       const catalog = await catalogLoader(source);
       const selectedSkills = selectSkills(catalog.skills, catalogIds, options.installAll);
-      for (const skill of selectedSkills) {
+      const totalCount = selectedSkills.length + directRefs.length;
+      for (let i = 0; i < selectedSkills.length; i++) {
+        const skill = selectedSkills[i]!;
+        options.onProgress?.(i + 1, totalCount, skill.id);
         await downloader(skill, catalog, statePaths.skillsDirPath);
         lockfile.installed[skill.id] = buildInstalledMetadata(skill, {
           cwd,
@@ -161,7 +171,7 @@ export async function installSkills(
         ref: catalog.ref,
       };
     } else if (!directRefs.length) {
-      throw new InstallError("Informe ao menos um skill-id, use --all ou passe owner/repo[@ref].", "INSTALL_REQUIRES_SKILL");
+      throw new InstallError("Provide at least one skill-id, use --all, or pass owner/repo[@ref].", "INSTALL_REQUIRES_SKILL");
     }
 
     for (const directRef of directRefs) {
@@ -203,7 +213,7 @@ export async function installSkills(
       autoSync,
     };
   } catch (error) {
-    throw toInstallError(error, "Falha ao instalar skills");
+    throw toInstallError(error, "Failed to install skills");
   }
 }
 
@@ -228,7 +238,7 @@ export async function updateInstalledSkills(
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
     if (!existing) {
-      throw new InstallError("Nenhuma instalacao local encontrada. Rode: skillex init", "LOCKFILE_MISSING");
+      throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
     }
 
     const source = await resolveProjectSource(options);
@@ -271,7 +281,7 @@ export async function updateInstalledSkills(
       const metadata = lockfile.installed[skillId];
       const directRef = metadata?.source ? parseGitHubSource(metadata.source) : null;
       if (!directRef) {
-        throw new InstallError(`Fonte direta invalida para "${skillId}".`, "DIRECT_SOURCE_INVALID");
+        throw new InstallError(`Invalid direct source for "${skillId}".`, "DIRECT_SOURCE_INVALID");
       }
 
       const directSkill = await fetchDirectGitHubSkill(directRef);
@@ -308,7 +318,7 @@ export async function updateInstalledSkills(
       autoSync,
     };
   } catch (error) {
-    throw toInstallError(error, "Falha ao atualizar skills");
+    throw toInstallError(error, "Failed to update skills");
   }
 }
 
@@ -331,11 +341,11 @@ export async function removeSkills(
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
     if (!existing) {
-      throw new InstallError("Nenhuma instalacao local encontrada. Rode: skillex init", "LOCKFILE_MISSING");
+      throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
     }
 
     if (!requestedSkillIds.length) {
-      throw new InstallError("Informe ao menos um skill-id para remover.", "REMOVE_REQUIRES_SKILL");
+      throw new InstallError("Provide at least one skill-id to remove.", "REMOVE_REQUIRES_SKILL");
     }
 
     const source = await resolveProjectSource(options);
@@ -378,7 +388,7 @@ export async function removeSkills(
       autoSync,
     };
   } catch (error) {
-    throw toInstallError(error, "Falha ao remover skills");
+    throw toInstallError(error, "Failed to remove skills");
   }
 }
 
@@ -397,7 +407,7 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
     if (!existing) {
-      throw new InstallError("Nenhuma instalacao local encontrada. Rode: skillex init", "LOCKFILE_MISSING");
+      throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
     }
 
     const source = await resolveProjectSource(options);
@@ -405,7 +415,7 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
     const adapterId = options.adapter || lockfile.adapters.active;
     if (!adapterId) {
       throw new InstallError(
-        "Nenhum adapter ativo definido. Rode: skillex init --adapter <id> ou use --adapter.",
+        "No active adapter configured. Run: skillex init --adapter <id> or use --adapter.",
         "ACTIVE_ADAPTER_MISSING",
       );
     }
@@ -457,7 +467,7 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
       syncMode: syncResult.syncMode,
     };
   } catch (error) {
-    throw toInstallError(error, "Falha ao sincronizar skills");
+    throw toInstallError(error, "Failed to synchronize skills");
   }
 }
 
@@ -558,7 +568,7 @@ function selectSkills(allSkills: SkillManifest[], requestedSkillIds: string[], i
   const selected = requestedSkillIds.map((skillId) => {
     const skill = byId.get(skillId);
     if (!skill) {
-      throw new InstallError(`Skill "${skillId}" nao encontrada no catalogo remoto.`, "SKILL_NOT_FOUND");
+      throw new InstallError(`Skill "${skillId}" not found in the remote catalog.`, "SKILL_NOT_FOUND");
     }
     return skill;
   });
@@ -636,7 +646,7 @@ async function fetchDirectGitHubSkill(reference: DirectGitHubRef): Promise<Direc
     headers: { Accept: "text/plain" },
   });
   if (!skillMarkdown) {
-    throw new InstallError(`Nenhum skill.json ou SKILL.md encontrado em ${repoId}@${reference.ref}.`, "DIRECT_SKILL_NOT_FOUND");
+    throw new InstallError(`No skill.json or SKILL.md found at ${repoId}@${reference.ref}.`, "DIRECT_SKILL_NOT_FOUND");
   }
 
   const frontmatter = parseSkillFrontmatter(skillMarkdown);
@@ -732,7 +742,7 @@ function buildInstalledMetadata(
 function resolveInstalledSkillIds(lockfile: LockfileState, requestedSkillIds: string[]): string[] {
   const installedIds = Object.keys(lockfile.installed || {});
   if (installedIds.length === 0) {
-    throw new InstallError("Nenhuma skill instalada para atualizar.", "NO_SKILLS_INSTALLED");
+    throw new InstallError("No skills installed to update.", "NO_SKILLS_INSTALLED");
   }
 
   if (!requestedSkillIds.length) {
@@ -742,7 +752,7 @@ function resolveInstalledSkillIds(lockfile: LockfileState, requestedSkillIds: st
   const installedSet = new Set(installedIds);
   for (const skillId of requestedSkillIds) {
     if (!installedSet.has(skillId)) {
-      throw new InstallError(`Skill "${skillId}" nao esta instalada localmente.`, "SKILL_NOT_INSTALLED");
+      throw new InstallError(`Skill "${skillId}" is not installed locally.`, "SKILL_NOT_INSTALLED");
     }
   }
 
@@ -821,7 +831,7 @@ function withAgentSkillsDir<T extends { agentSkillsDir?: string | undefined }>(
 }
 
 async function confirmDirectInstall(skillRef: string, options: InstallOptions): Promise<void> {
-  const warning = `Aviso: ${skillRef} sera instalado diretamente do GitHub e nao foi verificado pelo catalogo ativo.`;
+  const warning = `Warning: ${skillRef} will be installed directly from GitHub and has not been verified by the active catalog.`;
   (options.warn || console.error)(warning);
 
   const confirm = options.confirm || (() => confirmAction("Continuar com a instalacao direta?"));
