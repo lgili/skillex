@@ -20,7 +20,7 @@
     "README.md"
   ],
   "bin": {
-    "askill": "./bin/askill.js"
+    "askill": "bin/askill.js"
   },
   "scripts": {
     "start": "node ./bin/askill.js",
