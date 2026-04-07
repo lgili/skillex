@@ -2,191 +2,381 @@
 
 [![CI](https://github.com/lgili/skillex/actions/workflows/ci.yml/badge.svg)](https://github.com/lgili/skillex/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/skillex)](https://www.npmjs.com/package/skillex)
+[![Node.js >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-CLI inicial para distribuir, listar e instalar skills hospedadas em um repositório GitHub.
+**Skillex** is a CLI that installs and synchronizes AI agent skills from a GitHub-hosted catalog into your workspace. It automatically injects skill instructions into the configuration file of whichever AI agent you use — Codex, Copilot, Cline, Cursor, Claude, Gemini, or Windsurf.
 
-## Por que usar Node + `npx`
+---
 
-`npx` é a melhor base para esse projeto porque:
+## Table of Contents
 
-- funciona em macOS, Linux e Windows sem depender de bash;
-- permite publicar uma única CLI com versionamento sem pedir instalação global;
-- facilita evolução para adapters, cache e update sem quebrar o fluxo do usuário.
+- [Quick Start](#quick-start)
+- [Installation](#installation)
+- [Commands](#commands)
+- [Adapters](#adapters)
+- [Skill Catalog Format](#skill-catalog-format)
+- [Skill Format](#skill-format)
+- [GitHub Token](#github-token)
+- [Global Configuration](#global-configuration)
+- [Workspace Structure](#workspace-structure)
+- [Auto-sync](#auto-sync)
+- [Troubleshooting](#troubleshooting)
+- [Publishing Your Own Catalog](#publishing-your-own-catalog)
+- [Contributing](#contributing)
+- [License](#license)
 
-Se depois você quiser atingir quem não usa Node, dá para empacotar a mesma CLI em binários standalone com `pkg` ou `nexe`. Mas o melhor ponto de partida é `npx`.
+---
 
-## Como o usuario instala
+## Quick Start
 
-Hoje, a convencao escolhida e:
-
-- nome do projeto/repo: `skillex`
-- nome do pacote npm: `skillex`
-- comando instalado: `skillex`
-
-### 1. Usar sem instalar globalmente
-
-Depois de publicar no npm:
+Get up and running in under two minutes using the built-in first-party skills catalog:
 
 ```bash
-npx skillex@latest init --repo seu-user/seu-repo
-npx skillex@latest install --all
+# 1. Initialize your workspace (auto-detects your AI agent)
+npx skillex@latest init --repo lgili/skillex
+
+# 2. Browse available skills
+npx skillex@latest list
+
+# 3. Install a skill
+npx skillex@latest install create-skills
+
+# 4. Sync skills into your agent's config file
 npx skillex@latest sync
 ```
 
-Esse e o fluxo que eu recomendo para a maioria dos usuarios.
+After `init`, Skillex saves your repo preference in the local lockfile so you can omit `--repo` in subsequent commands.
 
-### 2. Instalar globalmente
+---
+
+## Installation
+
+### Option 1 — Run without installing (recommended for most users)
+
+```bash
+npx skillex@latest <command>
+```
+
+### Option 2 — Install globally
 
 ```bash
 npm install -g skillex
-skillex init --repo seu-user/seu-repo
-skillex install git-master
-skillex sync
+skillex --help
 ```
 
-Bom para quem vai usar o CLI com frequencia.
-
-### 3. Instalar no projeto como dependencia de desenvolvimento
+### Option 3 — Install as a dev dependency (pin the version per project)
 
 ```bash
 npm install -D skillex
-npx skillex init --repo seu-user/seu-repo
-npx skillex install --all
+npx skillex <command>
 ```
 
-Bom quando voce quer fixar a versao do CLI no proprio repositório.
+---
 
-### 4. Usar localmente antes de publicar
+## Commands
 
-Dentro deste repositório:
+### `init`
+
+Initialize (or re-initialize) the workspace. Creates `.agent-skills/skills.json`, detects your adapter, and writes `.agent-skills/.gitignore`.
 
 ```bash
-npm install
-npm run start -- init --repo seu-user/seu-repo
+skillex init --repo <owner/repo>
+skillex init --repo lgili/skillex --adapter cursor
+skillex init --repo lgili/skillex --auto-sync
 ```
 
-Ou, para testar como comando global localmente:
+| Flag | Description |
+|------|-------------|
+| `--repo <owner/repo>` | **Required.** GitHub repository that hosts the skill catalog. |
+| `--adapter <id>` | Force a specific adapter instead of auto-detecting. |
+| `--auto-sync` | Automatically run `sync` after every install, update, and remove. |
+| `--ref <branch>` | Use a specific branch or tag (default: `main`). |
+
+---
+
+### `list`
+
+List all skills available in the remote catalog.
 
 ```bash
-npm link
-skillex help
+skillex list
+skillex list --json
 ```
 
-## Nome do pacote vs comando
+| Flag | Description |
+|------|-------------|
+| `--json` | Print raw JSON instead of formatted output. |
+| `--no-cache` | Bypass the local catalog cache and fetch fresh data. |
 
-- nome do projeto/repo: `skillex`
-- nome do pacote no npm: `skillex`
-- comando instalado: `skillex`
+---
 
-Assim, o fluxo final fica simples e direto:
+### `search`
+
+Search skills by keyword, adapter compatibility, or tag.
 
 ```bash
-npx skillex@latest init --repo seu-user/seu-repo
+skillex search git
+skillex search --compatibility cursor
+skillex search --tags workflow
+skillex search review --compatibility claude --tags code-quality
 ```
 
-## First-Party Skills
+| Flag | Description |
+|------|-------------|
+| `--compatibility <adapter>` | Filter by adapter (e.g. `cursor`, `claude`, `codex`). |
+| `--tags <tag>` | Filter by tag. |
+| `--json` | Print raw JSON. |
 
-Este mesmo repositório também funciona como catálogo first-party de skills.
+---
 
-- catálogo na raiz: `catalog.json`
-- skills publicadas: `skills/<skill-id>/`
-- primeira skill: `create-skills`
+### `install`
 
-Listar skills publicadas neste repositório:
+Install one or more skills by ID, or all skills from the catalog.
 
 ```bash
-npx skillex@latest list --repo lgili/skillex
+# Install by ID
+skillex install git-master
+
+# Install multiple skills
+skillex install git-master code-review
+
+# Install all skills from the catalog
+skillex install --all
+
+# Install directly from a GitHub repository (no catalog needed)
+skillex install owner/repo/path/to/skill@main --trust
 ```
 
-Instalar a skill de autoria:
+| Flag | Description |
+|------|-------------|
+| `--all` | Install every skill in the catalog. |
+| `--trust` | Skip confirmation prompt for direct GitHub installs. |
+
+---
+
+### `update`
+
+Update installed skills to their latest catalog version.
 
 ```bash
-npx skillex@latest install create-skills --repo lgili/skillex
+# Update all installed skills
+skillex update
+
+# Update a specific skill
+skillex update git-master
 ```
 
-Scaffold local de uma nova skill no formato do repositório:
+---
+
+### `remove`
+
+Remove one or more installed skills. Aliases: `rm`, `uninstall`.
 
 ```bash
-node skills/create-skills/scripts/init_repo_skill.js \
-  --root . \
-  --skill-id my-skill \
-  --name "My Skill" \
-  --description "Describe what the skill does and when to use it."
+skillex remove git-master
+skillex rm git-master code-review
 ```
 
-## CLI implementado
+---
 
-- `skillex init`: cria ou atualiza `.agent-skills/skills.json` e detecta o adapter do workspace
-- `skillex list`: lê um catálogo remoto no GitHub e lista as skills disponíveis
-- `skillex search`: filtra skills remotas por texto, compatibilidade e tag
-- `skillex install <id>`: baixa uma ou mais skills
-- `skillex install <owner/repo[@ref]>`: instala uma skill direto de um repositório GitHub
-- `skillex install --all`: baixa todas as skills do catálogo
-- `skillex update [id]`: atualiza uma skill instalada ou todas
-- `skillex remove <id>`: remove uma ou mais skills instaladas
-- `skillex sync`: materializa as skills instaladas no arquivo de instruções do adapter ativo
-- `skillex sync --dry-run`: mostra o diff antes de escrever
-- `skillex sync --mode copy`: desativa symlink para adapters de arquivo dedicado
-- `skillex run <skill-id:comando>`: executa scripts declarados no `skill.json` local da skill
-- `skillex ui`: abre o seletor interativo no terminal
-- `skillex status`: mostra o estado local
+### `sync`
 
-## Adapters detectados
-
-O CLI já detecta e persiste um adapter ativo com base no workspace:
-
-- `codex`: `AGENTS.md`, `.codex/`, `.codex/skills`
-- `copilot`: `.github/copilot-instructions.md`
-- `cline`: `.cline/`, `.roo/`, `.clinerules`
-- `cursor`: `.cursor/`, `.cursorrules`
-- `claude`: `CLAUDE.md`, `.claude/`
-- `gemini`: `GEMINI.md`, `.gemini/`
-- `windsurf`: `.windsurf/`, `.windsurf/rules/`
-
-Quando há markers ambíguos, o CLI prioriza markers específicos do agente sobre arquivos compartilhados.
-
-## Alvos de sync por adapter
-
-- `codex`: atualiza um bloco gerenciado em `AGENTS.md`
-- `copilot`: atualiza um bloco gerenciado em `.github/copilot-instructions.md`
-- `cline`: gera `.clinerules/skillex-skills.md`
-- `cursor`: gera `.cursor/rules/skillex-skills.mdc`
-- `claude`: atualiza um bloco gerenciado em `CLAUDE.md`
-- `gemini`: atualiza um bloco gerenciado em `GEMINI.md`
-- `windsurf`: gera `.windsurf/rules/skillex-skills.md`
-
-Os arquivos compartilhados preservam conteúdo manual fora do bloco gerenciado pelo `skillex`.
-Para adapters de arquivo dedicado (`cline`, `cursor`, `windsurf`), o padrão agora é gerar o arquivo central em `.agent-skills/generated/` e criar um symlink relativo para o alvo do adapter. Use `skillex sync --mode copy` para forçar cópia direta.
-
-Você também pode forçar um adapter:
+Write all installed skills into the active adapter's config file.
 
 ```bash
-npm run start -- init --repo seu-user/seu-repo --adapter codex
-npm run start -- init --repo seu-user/seu-repo --adapter codex --auto-sync
+# Sync to the detected adapter
+skillex sync
+
+# Preview changes without writing (shows a diff)
+skillex sync --dry-run
+
+# Force a specific adapter
+skillex sync --adapter codex
+
+# Copy files instead of using symlinks
+skillex sync --mode copy
 ```
 
-## Estrutura recomendada do catálogo remoto
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Show what would change without writing anything. |
+| `--adapter <id>` | Override the active adapter for this sync. |
+| `--mode copy\|symlink` | File write strategy (default: `symlink` for dedicated-file adapters). |
 
-```text
+---
+
+### `run`
+
+Execute a script declared in a skill's `skill.json`.
+
+```bash
+skillex run git-master:cleanup
+skillex run git-master:cleanup --yes   # skip confirmation
+```
+
+---
+
+### `ui`
+
+Open an interactive terminal UI to browse and install skills.
+
+```bash
+skillex ui
+```
+
+---
+
+### `status`
+
+Show the current local workspace state: adapter, installed skills, last sync.
+
+```bash
+skillex status
+```
+
+---
+
+### `doctor`
+
+Run a health check on your workspace and report any issues.
+
+```bash
+skillex doctor
+skillex doctor --json
+```
+
+Checks performed:
+
+| # | Check | What it verifies |
+|---|-------|-----------------|
+| 1 | Lockfile | `.agent-skills/skills.json` exists |
+| 2 | Repo | Catalog repo is configured in the lockfile |
+| 3 | Adapter | At least one adapter is detected or active |
+| 4 | GitHub | `api.github.com` is reachable |
+| 5 | Token | `GITHUB_TOKEN` present → 5,000 req/hr; absent → 60 req/hr |
+| 6 | Cache | Catalog cache exists and whether it is fresh or expired |
+
+Exits with code `1` if any non-warning check fails.
+
+---
+
+### `config`
+
+Read or write persistent global preferences stored in `~/.askillrc.json`.
+
+```bash
+# Read a value
+skillex config get defaultRepo
+
+# Write a value
+skillex config set defaultRepo lgili/skillex
+skillex config set defaultAdapter cursor
+skillex config set disableAutoSync true
+```
+
+| Key | Description |
+|-----|-------------|
+| `defaultRepo` | Default `--repo` used when not specified on the CLI. |
+| `defaultAdapter` | Default adapter when auto-detection is ambiguous. |
+| `githubToken` | GitHub personal access token (prefer `GITHUB_TOKEN` env var). |
+| `disableAutoSync` | Set to `true` to globally disable auto-sync. |
+
+---
+
+### Global Flags
+
+These flags work with every command:
+
+| Flag | Description |
+|------|-------------|
+| `--verbose`, `-v` | Print debug output including HTTP requests and responses. |
+| `--json` | Machine-readable JSON output (where supported). |
+| `--no-cache` | Skip the catalog cache and fetch from GitHub. |
+| `--help` | Show help for the current command. |
+
+---
+
+## Adapters
+
+Skillex auto-detects the AI agent you use by looking for known marker files in your workspace.
+
+| Adapter ID | Agent | Detection Markers | Sync Target |
+|------------|-------|-------------------|-------------|
+| `codex` | OpenAI Codex | `AGENTS.md`, `.codex/` | `AGENTS.md` |
+| `copilot` | GitHub Copilot | `.github/copilot-instructions.md` | `.github/copilot-instructions.md` |
+| `cline` | Cline / Roo Code | `.cline/`, `.roo/`, `.clinerules` | `.clinerules/skillex-skills.md` |
+| `cursor` | Cursor | `.cursor/`, `.cursorrules` | `.cursor/rules/skillex-skills.mdc` |
+| `claude` | Claude Code | `CLAUDE.md`, `.claude/` | `CLAUDE.md` |
+| `gemini` | Gemini CLI | `GEMINI.md`, `.gemini/` | `GEMINI.md` |
+| `windsurf` | Windsurf | `.windsurf/`, `.windsurf/rules/` | `.windsurf/rules/skillex-skills.md` |
+
+**Shared-file adapters** (`codex`, `copilot`, `claude`, `gemini`) use a **managed block** — Skillex writes between `<!-- SKILLEX:START -->` and `<!-- SKILLEX:END -->` markers while preserving everything else in the file.
+
+**Dedicated-file adapters** (`cline`, `cursor`, `windsurf`) generate a file in `.agent-skills/generated/` and create a relative symlink at the adapter's target path. Use `--mode copy` to write directly instead.
+
+Compatibility aliases are normalized automatically: `claude-code` → `claude`, `github-copilot` → `copilot`, `roo-code` → `cline`, `gemini-cli` → `gemini`.
+
+---
+
+## Skill Catalog Format
+
+A catalog can be hosted in any public GitHub repository. Skillex looks for skills in this order:
+
+1. **`catalog.json`** at the repository root (fastest, recommended for larger catalogs)
+2. **`skills/*/skill.json`** manifest files discovered via the GitHub tree API
+3. **`skills/*/SKILL.md`** files as a final fallback (reads frontmatter for metadata)
+
+### `catalog.json`
+
+```json
+{
+  "formatVersion": 1,
+  "repo": "your-org/your-skills",
+  "ref": "main",
+  "skills": [
+    {
+      "id": "git-master",
+      "name": "Git Master",
+      "version": "1.0.0",
+      "description": "Teaches the agent to write semantic commits and manage branches.",
+      "author": "your-name",
+      "tags": ["git", "workflow"],
+      "compatibility": ["codex", "copilot", "cline", "cursor", "claude", "gemini", "windsurf"],
+      "path": "skills/git-master",
+      "entry": "SKILL.md",
+      "files": ["SKILL.md", "tools/git-cleanup.js"]
+    }
+  ]
+}
+```
+
+### Recommended repository layout
+
+```
 skills/
   git-master/
-    SKILL.md
-    skill.json
+    SKILL.md          ← main skill content (required)
+    skill.json        ← skill manifest
     tools/
-      git-cleanup.js
-catalog.json
+      git-cleanup.js  ← optional scripts
+catalog.json          ← optional but recommended
 ```
 
-## Formato recomendado de `skill.json`
+---
+
+## Skill Format
+
+### `skill.json`
 
 ```json
 {
   "id": "git-master",
   "name": "Git Master",
   "version": "1.0.0",
-  "description": "Ensina o agente a fazer commits semanticos e gerenciar branches.",
-  "author": "SeuNome",
-  "tags": ["git", "workflow", "vscode"],
+  "description": "Teaches the agent to write semantic commits and manage branches.",
+  "author": "your-name",
+  "tags": ["git", "workflow"],
   "compatibility": ["codex", "copilot", "cline", "cursor", "claude", "gemini", "windsurf"],
   "entry": "SKILL.md",
   "files": ["SKILL.md", "tools/git-cleanup.js"],
@@ -196,145 +386,189 @@ catalog.json
 }
 ```
 
-## Frontmatter opcional de `SKILL.md`
+### `SKILL.md` frontmatter
 
-O `SKILL.md` pode declarar campos extras para injeção automática de contexto:
-
-```yaml
+```markdown
 ---
 name: "git-master"
-description: "Fluxo Git"
+description: "Git workflow instructions"
 autoInject: true
-activationPrompt: "Sempre aplique as regras da skill Git Master quando o usuario pedir ajuda com Git."
+activationPrompt: "Always apply Git Master rules when the user asks for Git help."
 ---
+
+# Git Master
+
+Your skill content goes here...
 ```
 
-Se `autoInject: true` e `activationPrompt` estiverem presentes, o `skillex sync` injeta esse prompt em um bloco gerenciado separado no arquivo principal do adapter.
+When `autoInject: true` and `activationPrompt` are set, `skillex sync` injects the activation prompt in a separate managed block at the top of the adapter's config file so the agent always has that context loaded.
 
-## Formato recomendado de `catalog.json`
+---
+
+## GitHub Token
+
+Without authentication, the GitHub API allows **60 requests per hour**. With a token, this rises to **5,000 requests per hour**.
+
+Set the token via environment variable (recommended):
+
+```bash
+export GITHUB_TOKEN=ghp_your_token_here
+```
+
+Or store it in the global config (convenient for personal machines):
+
+```bash
+skillex config set githubToken ghp_your_token_here
+```
+
+The environment variable always takes precedence over the config file value.
+
+To generate a token: **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**. The token only needs read access to public repositories (`Contents: Read`).
+
+---
+
+## Global Configuration
+
+Persistent preferences are stored in `~/.askillrc.json` (respects `XDG_CONFIG_HOME`).
 
 ```json
 {
-  "formatVersion": 1,
-  "repo": "seu-user/seu-repo",
-  "ref": "main",
-  "skills": [
-    {
-      "id": "git-master",
-      "name": "Git Master",
-      "version": "1.0.0",
-      "description": "Ensina o agente a trabalhar melhor com Git.",
-      "path": "skills/git-master",
-      "entry": "SKILL.md",
-      "files": ["SKILL.md", "tools/git-cleanup.js"],
-      "compatibility": ["codex", "copilot", "cline", "cursor", "claude", "gemini", "windsurf"],
-      "tags": ["git", "workflow"]
-    }
-  ]
+  "defaultRepo": "lgili/skillex",
+  "defaultAdapter": "cursor",
+  "githubToken": "ghp_...",
+  "disableAutoSync": false
 }
 ```
 
-O CLI tenta usar `catalog.json` primeiro. Se ele não existir, faz fallback e escaneia `skills/*/skill.json` no GitHub.
-Nos filtros de busca, aliases como `claude-code`, `gemini-cli`, `github-copilot` e `roo-code` sao normalizados automaticamente.
+**Precedence order** (highest to lowest):
 
-## Uso local
-
-```bash
-npm install
-npm run start -- init --repo seu-user/seu-repo
-npm run start -- list --repo seu-user/seu-repo
-npm run start -- search git --repo seu-user/seu-repo
-npm run start -- search pdf --repo seu-user/seu-repo --compatibility codex
-npm run start -- search review --repo seu-user/seu-repo --compatibility claude-code
-npm run start -- install git-master --repo seu-user/seu-repo
-npm run start -- install lgili/skillex-create-skill@main --trust
-npm run start -- install --all --repo seu-user/seu-repo
-npm run start -- update
-npm run start -- update git-master
-npm run start -- remove git-master
-npm run start -- sync
-npm run start -- sync --dry-run
-npm run start -- sync --adapter cursor
-npm run start -- sync --adapter cline --mode copy
-npm run start -- run git-master:cleanup --yes
-npm run start -- ui --repo seu-user/seu-repo
-npm run start -- status
+```
+CLI flags  >  GITHUB_TOKEN env var  >  ~/.askillrc.json  >  defaults
 ```
 
-Depois do `init`, o CLI passa a reutilizar o catálogo salvo no lockfile. Então comandos como `search`, `install`, `update` e `remove` podem rodar sem repetir `--repo`.
+---
 
-## Estrutura local gerenciada
+## Workspace Structure
 
-```text
+After `init` and a few installs, your workspace will look like this:
+
+```
 .agent-skills/
-  skills.json
+  skills.json          ← lockfile: adapter state, installed skills, sync metadata
+  .gitignore           ← auto-created; excludes .cache/ and *.log
   skills/
     git-master/
       SKILL.md
       skill.json
       tools/
+        git-cleanup.js
   generated/
     cline/
       skillex-skills.md
+  .cache/
+    <sha256>.json      ← catalog cache (5-min TTL, excluded from git)
 ```
 
-O `skills.json` funciona como lockfile e guarda:
+The `skills.json` lockfile records:
 
-- catálogo remoto configurado;
-- adapter ativo e adapters detectados;
-- configuração local como `autoSync`;
-- último sync executado;
-- modo do último sync (`symlink` ou `copy`);
-- skills instaladas e suas versões;
-- origem da instalação, incluindo `github:owner/repo@ref` em installs diretos;
-- timestamps de criação e atualização.
+- Remote catalog repo and ref
+- Active adapter and all detected adapters
+- `autoSync` setting
+- Last sync: adapter, target path, timestamp, and write mode (`symlink` or `copy`)
+- All installed skills with their versions, tags, compatibility, and install timestamps
+- Installation source (e.g. `github:owner/repo@ref` for direct installs)
+
+> **Tip:** Commit `.agent-skills/skills.json` and `.agent-skills/skills/` to version-control your skill setup. The `.cache/` directory is automatically excluded.
+
+---
 
 ## Auto-sync
 
-Se você ativar `--auto-sync` no `init`, o CLI passa a executar `sync` automaticamente após:
-
-- `install`
-- `update`
-- `remove`
-
-Isso mantém o arquivo do agente sempre atualizado sem precisar chamar `skillex sync` manualmente.
-
-## Como publicar para `npx`
-
-1. Crie o secret `NPM_TOKEN` no repositório GitHub.
-2. Atualize a versão em `package.json`.
-3. Faça commit e push para `main`.
-4. Crie uma tag `vX.Y.Z` que bata com a versão do `package.json`.
-5. Faça push da tag.
-6. O GitHub Actions publica `skillex` no npm.
-
-Exemplo:
+When `--auto-sync` is enabled at `init`, Skillex runs `sync` automatically after every `install`, `update`, and `remove`. This keeps your agent's config file always up to date.
 
 ```bash
-git tag v0.2.0
+# Enable at init time
+skillex init --repo lgili/skillex --auto-sync
+
+# Or re-initialize to enable it
+skillex init --repo lgili/skillex --auto-sync
+```
+
+---
+
+## Troubleshooting
+
+Run `skillex doctor` first — it checks the six most common issues and tells you exactly what to fix:
+
+```bash
+$ skillex doctor
+
+✓ Lockfile found at .agent-skills/skills.json
+✓ Repo configured: lgili/skillex @ main
+✓ Adapter active: cursor
+✓ GitHub API reachable
+⚠ Token: unauthenticated (60 req/hr) — set GITHUB_TOKEN to raise limit
+✓ Cache: fresh (expires in 4m 12s)
+```
+
+### Common issues
+
+| Symptom | Fix |
+|---------|-----|
+| `Missing required flag: --repo` | Run `skillex init --repo owner/repo` |
+| `GitHub API rate limit exceeded` | Set `GITHUB_TOKEN` in your environment |
+| `Repository or file not found` | Check `--repo` value; ensure the repo is public |
+| `No adapter detected` | Run `skillex init --adapter <id>` with an explicit adapter |
+| `skillex sync` shows no changes | Run `skillex install --all` first to install skills |
+| Slow catalog fetch | Use `--no-cache` once, then the 5-min cache takes over |
+
+For verbose HTTP logs, add `--verbose`:
+
+```bash
+skillex list --verbose
+```
+
+---
+
+## Publishing Your Own Catalog
+
+1. Create a public GitHub repository.
+2. Add skills following the [Skill Format](#skill-format) above.
+3. Optionally add a `catalog.json` at the root.
+4. Point users at your catalog:
+
+```bash
+npx skillex@latest init --repo your-org/your-skills
+npx skillex@latest list
+```
+
+### Releasing via GitHub Actions
+
+If you use this repository as a template, the included workflow publishes to npm automatically:
+
+1. Add `NPM_TOKEN` as a repository secret (GitHub → Settings → Secrets).
+2. Update the version in `package.json`.
+3. Push a tag matching the version:
+
+```bash
+git tag v1.0.0
 git push origin main --tags
 ```
 
-O workflow de release valida:
+The workflow validates the tag, runs tests, packs the tarball, publishes to npm, and creates a GitHub Release with automatic release notes.
 
-- se a tag bate com a versão do `package.json`
-- se os testes passam
-- se o pacote empacota corretamente antes do `npm publish`
-- e cria uma GitHub Release com notas automáticas para a tag
+---
 
-## Segredo necessario no GitHub
+## Contributing
 
-No repositório `lgili/skillex`, configure:
+We welcome contributions of all kinds — bug fixes, new features, documentation improvements, and new skills.
 
-- `NPM_TOKEN`: token de publicação do npm com permissão para publicar `skillex`
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup instructions, PR guidelines, and commit conventions.
 
-## Melhorias que valem a pena na sua lib
+To report a security vulnerability, see [SECURITY.md](SECURITY.md).
 
-- usar `SKILL.md` como arquivo principal para compatibilidade com o ecossistema atual;
-- manter `skill.json` como manifesto de distribuição, não como substituto do padrão da skill;
-- adicionar checksums no catálogo para integridade;
-- evoluir os adapters para suportarem `inject()` e sincronização com cada agente;
-- adicionar preview com diff mais compacto por hunks;
-- adicionar `skillex doctor` para validar catálogo, adapters e estado local;
-- adicionar cache local e instalação concorrente;
-- assinar releases ou manifests se quiser confiança maior no catálogo.
+---
+
+## License
+
+[MIT](LICENSE) © 2026 Luiz Carlos Gili
