@@ -5,4 +5,4 @@
 - [x] 1.3 Adicionar workflow de release para publicar no npm em tags de versão
 - [x] 1.4 Documentar `NPM_TOKEN` e o processo de tagging/release
 - [x] 1.5 Configurar remoto git para `https://github.com/lgili/askill.git`
-- [ ] 1.6 Criar commit inicial e tentar push para o remoto
+- [x] 1.6 Criar commit inicial e tentar push para o remoto
