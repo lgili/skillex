@@ -46,7 +46,7 @@ async function fakeDownloader(skill, catalog, stateDir) {
 }
 
 test("install, update e remove manipulam o lockfile local", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-install-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-install-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -100,7 +100,7 @@ test("install, update e remove manipulam o lockfile local", async (t) => {
 });
 
 test("updateInstalledSkills reporta skill ausente no catalogo remoto", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-update-missing-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-update-missing-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });

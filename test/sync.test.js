@@ -77,7 +77,7 @@ async function setupInstalledSkill(cwd, options = {}) {
 }
 
 test("syncInstalledSkills preserva conteudo manual em AGENTS.md", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-codex-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-codex-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -110,7 +110,10 @@ test("syncInstalledSkills preserva conteudo manual em AGENTS.md", async (t) => {
   const content = await fs.readFile(path.join(cwd, "AGENTS.md"), "utf8");
   assert.match(content, /# Manual/);
   assert.match(content, /Depois do bloco/);
-  assert.match(content, /## Askill Managed Skills/);
+  assert.match(content, /## Skillex Managed Skills/);
+  assert.match(content, /<!-- SKILLEX:START -->/);
+  assert.match(content, /<!-- SKILLEX:END -->/);
+  assert.doesNotMatch(content, /<!-- ASKILL:START -->/);
   assert.match(content, /### Git Master \(`git-master@1\.0\.0`\)/);
   assert.match(content, /Use esta skill a partir de example\/skills\./);
   assert.doesNotMatch(content, /^description:/m);
@@ -123,7 +126,7 @@ test("syncInstalledSkills preserva conteudo manual em AGENTS.md", async (t) => {
 });
 
 test("syncInstalledSkills preserva conteudo manual em copilot-instructions", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-copilot-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-copilot-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -150,12 +153,12 @@ test("syncInstalledSkills preserva conteudo manual em copilot-instructions", asy
 
   const content = await fs.readFile(path.join(cwd, ".github", "copilot-instructions.md"), "utf8");
   assert.match(content, /# Manual Copilot/);
-  assert.match(content, /## Askill Managed Skills/);
-  assert.match(content, /<!-- ASKILL:START -->/);
+  assert.match(content, /## Skillex Managed Skills/);
+  assert.match(content, /<!-- SKILLEX:START -->/);
 });
 
 test("syncInstalledSkills preserva conteudo manual em CLAUDE.md", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-claude-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-claude-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -181,12 +184,12 @@ test("syncInstalledSkills preserva conteudo manual em CLAUDE.md", async (t) => {
 
   const content = await fs.readFile(path.join(cwd, "CLAUDE.md"), "utf8");
   assert.match(content, /# Manual Claude/);
-  assert.match(content, /## Askill Managed Skills/);
-  assert.match(content, /<!-- ASKILL:START -->/);
+  assert.match(content, /## Skillex Managed Skills/);
+  assert.match(content, /<!-- SKILLEX:START -->/);
 });
 
 test("syncInstalledSkills preserva conteudo manual em GEMINI.md", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-gemini-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-gemini-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -212,15 +215,18 @@ test("syncInstalledSkills preserva conteudo manual em GEMINI.md", async (t) => {
 
   const content = await fs.readFile(path.join(cwd, "GEMINI.md"), "utf8");
   assert.match(content, /# Manual Gemini/);
-  assert.match(content, /## Askill Managed Skills/);
-  assert.match(content, /<!-- ASKILL:START -->/);
+  assert.match(content, /## Skillex Managed Skills/);
+  assert.match(content, /<!-- SKILLEX:START -->/);
 });
 
 test("syncInstalledSkills escreve arquivo dedicado para cline", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-cline-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-cline-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
+
+  await fs.mkdir(path.join(cwd, ".clinerules"), { recursive: true });
+  await writeText(path.join(cwd, ".clinerules", "askill-skills.md"), "legado\n");
 
   await setupInstalledSkill(cwd, { adapter: "codex" });
   const result = await syncInstalledSkills({
@@ -230,11 +236,12 @@ test("syncInstalledSkills escreve arquivo dedicado para cline", async (t) => {
   });
 
   assert.equal(result.sync.adapter, "cline");
-  assert.equal(result.sync.targetPath, ".clinerules/askill-skills.md");
-  assert.equal(await pathExists(path.join(cwd, ".clinerules", "askill-skills.md")), true);
+  assert.equal(result.sync.targetPath, ".clinerules/skillex-skills.md");
+  assert.equal(await pathExists(path.join(cwd, ".clinerules", "skillex-skills.md")), true);
+  assert.equal(await pathExists(path.join(cwd, ".clinerules", "askill-skills.md")), false);
 
-  const content = await fs.readFile(path.join(cwd, ".clinerules", "askill-skills.md"), "utf8");
-  assert.match(content, /## Askill Managed Skills/);
+  const content = await fs.readFile(path.join(cwd, ".clinerules", "skillex-skills.md"), "utf8");
+  assert.match(content, /## Skillex Managed Skills/);
   assert.match(content, /### Git Master \(`git-master@1\.0\.0`\)/);
 
   const state = await getInstalledSkills({ cwd });
@@ -243,7 +250,7 @@ test("syncInstalledSkills escreve arquivo dedicado para cline", async (t) => {
 });
 
 test("syncInstalledSkills escreve arquivo MDC para cursor", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-cursor-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-cursor-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -256,16 +263,16 @@ test("syncInstalledSkills escreve arquivo MDC para cursor", async (t) => {
   });
 
   assert.equal(result.sync.adapter, "cursor");
-  assert.equal(result.sync.targetPath, ".cursor/rules/askill-skills.mdc");
+  assert.equal(result.sync.targetPath, ".cursor/rules/skillex-skills.mdc");
 
-  const content = await fs.readFile(path.join(cwd, ".cursor", "rules", "askill-skills.mdc"), "utf8");
+  const content = await fs.readFile(path.join(cwd, ".cursor", "rules", "skillex-skills.mdc"), "utf8");
   assert.match(content, /^---$/m);
   assert.match(content, /alwaysApply: true/);
-  assert.match(content, /## Askill Managed Skills/);
+  assert.match(content, /## Skillex Managed Skills/);
 });
 
 test("syncInstalledSkills escreve arquivo de regras para windsurf", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-windsurf-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-windsurf-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -278,16 +285,16 @@ test("syncInstalledSkills escreve arquivo de regras para windsurf", async (t) =>
   });
 
   assert.equal(result.sync.adapter, "windsurf");
-  assert.equal(result.sync.targetPath, ".windsurf/rules/askill-skills.md");
+  assert.equal(result.sync.targetPath, ".windsurf/rules/skillex-skills.md");
 
-  const content = await fs.readFile(path.join(cwd, ".windsurf", "rules", "askill-skills.md"), "utf8");
+  const content = await fs.readFile(path.join(cwd, ".windsurf", "rules", "skillex-skills.md"), "utf8");
   assert.match(content, /^---$/m);
   assert.match(content, /trigger: always_on/);
-  assert.match(content, /## Askill Managed Skills/);
+  assert.match(content, /## Skillex Managed Skills/);
 });
 
 test("syncInstalledSkills dry-run gera diff sem escrever arquivo nem lockfile", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-sync-dry-run-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-dry-run-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -312,7 +319,7 @@ test("syncInstalledSkills dry-run gera diff sem escrever arquivo nem lockfile", 
 });
 
 test("auto-sync roda apos install, update e remove quando habilitado", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-auto-sync-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-auto-sync-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });

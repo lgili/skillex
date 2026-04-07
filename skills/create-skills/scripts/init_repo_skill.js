@@ -206,7 +206,7 @@ async function readCatalog(catalogPath) {
   if (!(await pathExists(catalogPath))) {
     return {
       formatVersion: 1,
-      repo: "lgili/askill",
+      repo: "lgili/skillex",
       ref: "main",
       skills: [],
     };

@@ -1,9 +1,15 @@
 import path from "node:path";
-import { ensureDir, readJson, readText, writeText } from "./fs.js";
+import { ensureDir, readJson, readText, removePath, writeText } from "./fs.js";
 import { getAdapter } from "./adapters.js";
 
-const MANAGED_START = "<!-- ASKILL:START -->";
-const MANAGED_END = "<!-- ASKILL:END -->";
+const MANAGED_START = "<!-- SKILLEX:START -->";
+const MANAGED_END = "<!-- SKILLEX:END -->";
+const LEGACY_MANAGED_BLOCKS = [
+  {
+    start: "<!-- ASKILL:START -->",
+    end: "<!-- ASKILL:END -->",
+  },
+];
 
 export async function loadInstalledSkillDocuments(context) {
   const installedEntries = Object.entries(context.lockfile.installed || {}).sort(([left], [right]) =>
@@ -32,6 +38,9 @@ export async function syncAdapterFiles(options) {
   if (!options.dryRun) {
     await ensureDir(path.dirname(prepared.absoluteTargetPath));
     await writeText(prepared.absoluteTargetPath, prepared.nextContent);
+    for (const cleanupPath of prepared.cleanupPaths) {
+      await removePath(cleanupPath);
+    }
   }
 
   return {
@@ -56,11 +65,15 @@ export async function prepareSyncAdapterFiles(options) {
   const nextContent =
     adapter.syncMode === "managed-block" ? upsertManagedBlock(existing, fileContent) : fileContent;
   const changed = normalizeComparableText(existing) !== normalizeComparableText(nextContent);
+  const cleanupPaths = (adapter.legacySyncTargets || [])
+    .map((relativePath) => path.join(options.cwd, relativePath))
+    .filter((absolutePath) => absolutePath !== targetPath);
 
   return {
     adapter: adapter.id,
     absoluteTargetPath: targetPath,
     targetPath: relativeTargetPath,
+    cleanupPaths,
     changed,
     currentContent: existing,
     nextContent,
@@ -71,9 +84,9 @@ export async function prepareSyncAdapterFiles(options) {
 export function renderInstalledSkills(skills) {
   const sections = skills.map(renderSkillSection).filter(Boolean);
   const lines = [
-    "## Askill Managed Skills",
+    "## Skillex Managed Skills",
     "",
-    "> Conteudo gerado por `askill sync`. Edicoes aqui podem ser sobrescritas.",
+    "> Conteudo gerado por `skillex sync`. Edicoes aqui podem ser sobrescritas.",
     "",
   ];
 
@@ -96,7 +109,7 @@ function buildAdapterFileContent(adapterId, body) {
     case "cursor":
       return [
         "---",
-        'description: "Askill managed skills"',
+        'description: "Skillex managed skills"',
         "alwaysApply: true",
         "---",
         "",
@@ -106,7 +119,7 @@ function buildAdapterFileContent(adapterId, body) {
     case "windsurf":
       return [
         "---",
-        'description: "Askill managed skills"',
+        'description: "Skillex managed skills"',
         "trigger: always_on",
         "---",
         "",
@@ -126,9 +139,14 @@ function buildAdapterFileContent(adapterId, body) {
 }
 
 function upsertManagedBlock(existingContent, blockContent) {
-  const blockPattern = new RegExp(`${escapeRegExp(MANAGED_START)}[\\s\\S]*?${escapeRegExp(MANAGED_END)}\\n?`, "m");
-  if (blockPattern.test(existingContent)) {
-    return existingContent.replace(blockPattern, `${blockContent}\n`);
+  for (const managedBlock of [{ start: MANAGED_START, end: MANAGED_END }, ...LEGACY_MANAGED_BLOCKS]) {
+    const blockPattern = new RegExp(
+      `${escapeRegExp(managedBlock.start)}[\\s\\S]*?${escapeRegExp(managedBlock.end)}\\n?`,
+      "m",
+    );
+    if (blockPattern.test(existingContent)) {
+      return existingContent.replace(blockPattern, `${blockContent}\n`);
+    }
   }
 
   const trimmed = existingContent.trimEnd();

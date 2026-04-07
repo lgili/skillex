@@ -98,7 +98,7 @@ export async function updateInstalledSkills(requestedSkillIds, options = {}) {
   const existing = await readJson(statePaths.lockfilePath, null);
 
   if (!existing) {
-    throw new Error("Nenhuma instalacao local encontrada. Rode: askill init");
+    throw new Error("Nenhuma instalacao local encontrada. Rode: skillex init");
   }
 
   const source = await resolveProjectSource(options);
@@ -155,7 +155,7 @@ export async function removeSkills(requestedSkillIds, options = {}) {
   const existing = await readJson(statePaths.lockfilePath, null);
 
   if (!existing) {
-    throw new Error("Nenhuma instalacao local encontrada. Rode: askill init");
+    throw new Error("Nenhuma instalacao local encontrada. Rode: skillex init");
   }
 
   if (!requestedSkillIds.length) {
@@ -204,14 +204,14 @@ export async function syncInstalledSkills(options = {}) {
   const existing = await readJson(statePaths.lockfilePath, null);
 
   if (!existing) {
-    throw new Error("Nenhuma instalacao local encontrada. Rode: askill init");
+    throw new Error("Nenhuma instalacao local encontrada. Rode: skillex init");
   }
 
   const source = await resolveProjectSource(options);
   const lockfile = normalizeLockfile(existing, source, now);
   const adapterId = options.adapter || lockfile.adapters.active;
   if (!adapterId) {
-    throw new Error("Nenhum adapter ativo definido. Rode: askill init --adapter <id> ou use --adapter.");
+    throw new Error("Nenhum adapter ativo definido. Rode: skillex init --adapter <id> ou use --adapter.");
   }
 
   const skills = await loadInstalledSkillDocuments({

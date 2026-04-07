@@ -7,14 +7,14 @@ import assert from "node:assert/strict";
 import { createSkillScaffold } from "../skills/create-skills/scripts/init_repo_skill.js";
 
 test("createSkillScaffold cria a skill e registra no catalogo", async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "askill-create-skill-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-create-skill-"));
   t.after(async () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
   await fs.writeFile(
     path.join(root, "catalog.json"),
-    `${JSON.stringify({ formatVersion: 1, repo: "lgili/askill", ref: "main", skills: [] }, null, 2)}\n`,
+    `${JSON.stringify({ formatVersion: 1, repo: "lgili/skillex", ref: "main", skills: [] }, null, 2)}\n`,
     "utf8",
   );
 

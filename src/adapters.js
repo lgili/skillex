@@ -29,7 +29,8 @@ const ADAPTERS = [
       { path: ".clinerules", weight: 12 },
       { path: ".roo/rules", weight: 12 },
     ],
-    syncTarget: ".clinerules/askill-skills.md",
+    syncTarget: ".clinerules/skillex-skills.md",
+    legacySyncTargets: [".clinerules/askill-skills.md"],
     syncMode: "managed-file",
   },
   {
@@ -40,7 +41,8 @@ const ADAPTERS = [
       { path: ".cursor/rules", weight: 18 },
       { path: ".cursorrules", weight: 12 },
     ],
-    syncTarget: ".cursor/rules/askill-skills.mdc",
+    syncTarget: ".cursor/rules/skillex-skills.mdc",
+    legacySyncTargets: [".cursor/rules/askill-skills.mdc"],
     syncMode: "managed-file",
   },
   {
@@ -70,7 +72,8 @@ const ADAPTERS = [
       { path: ".windsurf", weight: 16 },
       { path: ".windsurf/rules", weight: 18 },
     ],
-    syncTarget: ".windsurf/rules/askill-skills.md",
+    syncTarget: ".windsurf/rules/skillex-skills.md",
+    legacySyncTargets: [".windsurf/rules/askill-skills.md"],
     syncMode: "managed-file",
   },
 ];

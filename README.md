@@ -1,7 +1,7 @@
-# Open Agent Skills
+# Skillex
 
-[![CI](https://github.com/lgili/askill/actions/workflows/ci.yml/badge.svg)](https://github.com/lgili/askill/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/%40lgili%2Faskill)](https://www.npmjs.com/package/@lgili/askill)
+[![CI](https://github.com/lgili/skillex/actions/workflows/ci.yml/badge.svg)](https://github.com/lgili/skillex/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/skillex)](https://www.npmjs.com/package/skillex)
 
 CLI inicial para distribuir, listar e instalar skills hospedadas em um repositório GitHub.
 
@@ -19,18 +19,18 @@ Se depois você quiser atingir quem não usa Node, dá para empacotar a mesma CL
 
 Hoje, a convencao escolhida e:
 
-- nome do projeto/repo: `open-agent-skills`
-- nome do pacote npm: `@lgili/askill`
-- comando instalado: `askill`
+- nome do projeto/repo: `skillex`
+- nome do pacote npm: `skillex`
+- comando instalado: `skillex`
 
 ### 1. Usar sem instalar globalmente
 
 Depois de publicar no npm:
 
 ```bash
-npx @lgili/askill@latest init --repo seu-user/seu-repo
-npx @lgili/askill@latest install --all
-npx @lgili/askill@latest sync
+npx skillex@latest init --repo seu-user/seu-repo
+npx skillex@latest install --all
+npx skillex@latest sync
 ```
 
 Esse e o fluxo que eu recomendo para a maioria dos usuarios.
@@ -38,10 +38,10 @@ Esse e o fluxo que eu recomendo para a maioria dos usuarios.
 ### 2. Instalar globalmente
 
 ```bash
-npm install -g @lgili/askill
-askill init --repo seu-user/seu-repo
-askill install git-master
-askill sync
+npm install -g skillex
+skillex init --repo seu-user/seu-repo
+skillex install git-master
+skillex sync
 ```
 
 Bom para quem vai usar o CLI com frequencia.
@@ -49,9 +49,9 @@ Bom para quem vai usar o CLI com frequencia.
 ### 3. Instalar no projeto como dependencia de desenvolvimento
 
 ```bash
-npm install -D @lgili/askill
-npx askill init --repo seu-user/seu-repo
-npx askill install --all
+npm install -D skillex
+npx skillex init --repo seu-user/seu-repo
+npx skillex install --all
 ```
 
 Bom quando voce quer fixar a versao do CLI no proprio repositório.
@@ -69,19 +69,19 @@ Ou, para testar como comando global localmente:
 
 ```bash
 npm link
-askill help
+skillex help
 ```
 
 ## Nome do pacote vs comando
 
-- nome do projeto/repo: `open-agent-skills`
-- nome do pacote no npm: `@lgili/askill`
-- comando instalado: `askill`
+- nome do projeto/repo: `skillex`
+- nome do pacote no npm: `skillex`
+- comando instalado: `skillex`
 
 Assim, o fluxo final fica simples e direto:
 
 ```bash
-npx @lgili/askill@latest init --repo seu-user/seu-repo
+npx skillex@latest init --repo seu-user/seu-repo
 ```
 
 ## First-Party Skills
@@ -95,13 +95,13 @@ Este mesmo repositório também funciona como catálogo first-party de skills.
 Listar skills publicadas neste repositório:
 
 ```bash
-npx @lgili/askill@latest list --repo lgili/askill
+npx skillex@latest list --repo lgili/skillex
 ```
 
 Instalar a skill de autoria:
 
 ```bash
-npx @lgili/askill@latest install create-skills --repo lgili/askill
+npx skillex@latest install create-skills --repo lgili/skillex
 ```
 
 Scaffold local de uma nova skill no formato do repositório:
@@ -116,16 +116,16 @@ node skills/create-skills/scripts/init_repo_skill.js \
 
 ## CLI implementado
 
-- `askill init`: cria ou atualiza `.agent-skills/skills.json` e detecta o adapter do workspace
-- `askill list`: lê um catálogo remoto no GitHub e lista as skills disponíveis
-- `askill search`: filtra skills remotas por texto, compatibilidade e tag
-- `askill install <id>`: baixa uma ou mais skills
-- `askill install --all`: baixa todas as skills do catálogo
-- `askill update [id]`: atualiza uma skill instalada ou todas
-- `askill remove <id>`: remove uma ou mais skills instaladas
-- `askill sync`: materializa as skills instaladas no arquivo de instruções do adapter ativo
-- `askill sync --dry-run`: mostra o diff antes de escrever
-- `askill status`: mostra o estado local
+- `skillex init`: cria ou atualiza `.agent-skills/skills.json` e detecta o adapter do workspace
+- `skillex list`: lê um catálogo remoto no GitHub e lista as skills disponíveis
+- `skillex search`: filtra skills remotas por texto, compatibilidade e tag
+- `skillex install <id>`: baixa uma ou mais skills
+- `skillex install --all`: baixa todas as skills do catálogo
+- `skillex update [id]`: atualiza uma skill instalada ou todas
+- `skillex remove <id>`: remove uma ou mais skills instaladas
+- `skillex sync`: materializa as skills instaladas no arquivo de instruções do adapter ativo
+- `skillex sync --dry-run`: mostra o diff antes de escrever
+- `skillex status`: mostra o estado local
 
 ## Adapters detectados
 
@@ -145,13 +145,13 @@ Quando há markers ambíguos, o CLI prioriza markers específicos do agente sobr
 
 - `codex`: atualiza um bloco gerenciado em `AGENTS.md`
 - `copilot`: atualiza um bloco gerenciado em `.github/copilot-instructions.md`
-- `cline`: gera `.clinerules/askill-skills.md`
-- `cursor`: gera `.cursor/rules/askill-skills.mdc`
+- `cline`: gera `.clinerules/skillex-skills.md`
+- `cursor`: gera `.cursor/rules/skillex-skills.mdc`
 - `claude`: atualiza um bloco gerenciado em `CLAUDE.md`
 - `gemini`: atualiza um bloco gerenciado em `GEMINI.md`
-- `windsurf`: gera `.windsurf/rules/askill-skills.md`
+- `windsurf`: gera `.windsurf/rules/skillex-skills.md`
 
-Os arquivos compartilhados preservam conteúdo manual fora do bloco gerenciado pelo `askill`.
+Os arquivos compartilhados preservam conteúdo manual fora do bloco gerenciado pelo `skillex`.
 
 Você também pode forçar um adapter:
 
@@ -264,7 +264,7 @@ Se você ativar `--auto-sync` no `init`, o CLI passa a executar `sync` automatic
 - `update`
 - `remove`
 
-Isso mantém o arquivo do agente sempre atualizado sem precisar chamar `askill sync` manualmente.
+Isso mantém o arquivo do agente sempre atualizado sem precisar chamar `skillex sync` manualmente.
 
 ## Como publicar para `npx`
 
@@ -273,12 +273,12 @@ Isso mantém o arquivo do agente sempre atualizado sem precisar chamar `askill s
 3. Faça commit e push para `main`.
 4. Crie uma tag `vX.Y.Z` que bata com a versão do `package.json`.
 5. Faça push da tag.
-6. O GitHub Actions publica `@lgili/askill` no npm.
+6. O GitHub Actions publica `skillex` no npm.
 
 Exemplo:
 
 ```bash
-git tag v0.1.0
+git tag v0.2.0
 git push origin main --tags
 ```
 
@@ -291,9 +291,9 @@ O workflow de release valida:
 
 ## Segredo necessario no GitHub
 
-No repositório `lgili/askill`, configure:
+No repositório `lgili/skillex`, configure:
 
-- `NPM_TOKEN`: token de publicação do npm com permissão para publicar `@lgili/askill`
+- `NPM_TOKEN`: token de publicação do npm com permissão para publicar `skillex`
 
 ## Melhorias que valem a pena na sua lib
 
@@ -302,6 +302,6 @@ No repositório `lgili/askill`, configure:
 - adicionar checksums no catálogo para integridade;
 - evoluir os adapters para suportarem `inject()` e sincronização com cada agente;
 - adicionar preview com diff mais compacto por hunks;
-- adicionar `askill doctor` para validar catálogo, adapters e estado local;
+- adicionar `skillex doctor` para validar catálogo, adapters e estado local;
 - adicionar cache local e instalação concorrente;
 - assinar releases ou manifests se quiser confiança maior no catálogo.

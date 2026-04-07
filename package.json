@@ -1,15 +1,15 @@
 {
-  "name": "@lgili/askill",
-  "version": "0.1.1",
-  "description": "Open Agent Skills CLI para listar, instalar e sincronizar skills de agentes a partir de um catalogo no GitHub.",
+  "name": "skillex",
+  "version": "0.2.0",
+  "description": "Skillex CLI para listar, instalar e sincronizar skills de agentes a partir de um catalogo no GitHub.",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lgili/askill.git"
+    "url": "git+https://github.com/lgili/skillex.git"
   },
-  "homepage": "https://github.com/lgili/askill#readme",
+  "homepage": "https://github.com/lgili/skillex#readme",
   "bugs": {
-    "url": "https://github.com/lgili/askill/issues"
+    "url": "https://github.com/lgili/skillex/issues"
   },
   "publishConfig": {
     "access": "public"
@@ -20,10 +20,10 @@
     "README.md"
   ],
   "bin": {
-    "askill": "bin/askill.js"
+    "skillex": "bin/skillex.js"
   },
   "scripts": {
-    "start": "node ./bin/askill.js",
+    "start": "node ./bin/skillex.js",
     "test": "node --test",
     "prepublishOnly": "npm test"
   },
@@ -34,6 +34,7 @@
     "agent-skills",
     "cli",
     "github",
+    "skillex",
     "codex",
     "copilot",
     "cursor"

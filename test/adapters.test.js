@@ -8,7 +8,7 @@ import { detectAdapters, resolveAdapterState } from "../src/adapters.js";
 import { initProject } from "../src/install.js";
 
 test("detectAdapters encontra adapters por marcadores do workspace", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-adapters-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-adapters-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -23,7 +23,7 @@ test("detectAdapters encontra adapters por marcadores do workspace", async (t) =
 });
 
 test("detectAdapters prioriza markers especificos sobre arquivos compartilhados", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-adapters-priority-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-adapters-priority-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -36,7 +36,7 @@ test("detectAdapters prioriza markers especificos sobre arquivos compartilhados"
 });
 
 test("resolveAdapterState respeita override explicito", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-adapter-override-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-adapter-override-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
@@ -49,7 +49,7 @@ test("resolveAdapterState respeita override explicito", async (t) => {
 });
 
 test("initProject persiste adapter ativo e detectados", async (t) => {
-  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "askill-init-"));
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-init-"));
   t.after(async () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });

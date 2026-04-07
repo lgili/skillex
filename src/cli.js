@@ -171,7 +171,7 @@ async function handleSync(flags) {
 async function handleStatus(flags) {
   const state = await getInstalledSkills(commonOptions(flags));
   if (!state) {
-    console.log("Nenhuma instalacao local encontrada. Rode: askill init");
+    console.log("Nenhuma instalacao local encontrada. Rode: skillex init");
     return;
   }
 
@@ -255,18 +255,18 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`askill
+  console.log(`skillex
 
 Comandos:
-  askill init --repo owner/repo [--ref main]
-  askill list --repo owner/repo [--ref main]
-  askill search [texto] --repo owner/repo [--compatibility codex]
-  askill install <skill-id...> --repo owner/repo [--ref main]
-  askill install --all --repo owner/repo [--ref main]
-  askill update [skill-id...]
-  askill remove <skill-id...>
-  askill sync [--adapter codex] [--dry-run]
-  askill status
+  skillex init --repo owner/repo [--ref main]
+  skillex list --repo owner/repo [--ref main]
+  skillex search [texto] --repo owner/repo [--compatibility codex]
+  skillex install <skill-id...> --repo owner/repo [--ref main]
+  skillex install --all --repo owner/repo [--ref main]
+  skillex update [skill-id...]
+  skillex remove <skill-id...>
+  skillex sync [--adapter codex] [--dry-run]
+  skillex status
 
 Flags:
   --repo               Repositorio GitHub no formato owner/repo

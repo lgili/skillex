@@ -1,6 +1,6 @@
 ---
 name: create-skills
-description: Scaffold new first-party skills for the Open Agent Skills repository. Use when creating or updating a skill in this repo so the result matches the local catalog structure, required metadata files, and registration rules.
+description: Scaffold new first-party skills for the Skillex repository. Use when creating or updating a skill in this repo so the result matches the local catalog structure, required metadata files, and registration rules.
 ---
 
 # Create Skills
@@ -23,7 +23,7 @@ Create a new skill in this repository root:
 
 ```bash
 node skills/create-skills/scripts/init_repo_skill.js \
-  --root /path/to/open-agent-skills \
+  --root /path/to/skillex \
   --skill-id my-skill \
   --name "My Skill" \
   --description "Describe what the skill does and when to use it."

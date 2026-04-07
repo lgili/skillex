@@ -28,7 +28,7 @@ export async function fetchOptionalJson(url, init = {}) {
 function withDefaultHeaders(init) {
   const headers = new Headers(init.headers || {});
   if (!headers.has("User-Agent")) {
-    headers.set("User-Agent", "askill");
+    headers.set("User-Agent", "skillex");
   }
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/vnd.github+json");

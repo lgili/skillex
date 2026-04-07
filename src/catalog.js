@@ -160,7 +160,7 @@ async function fetchJsonLikeText(url) {
   const response = await fetch(url, {
     headers: {
       Accept: "text/plain",
-      "User-Agent": "askill",
+      "User-Agent": "skillex",
     },
   });
   if (!response.ok) {

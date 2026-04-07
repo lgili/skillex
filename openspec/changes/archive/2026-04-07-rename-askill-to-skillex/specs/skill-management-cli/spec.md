@@ -1,8 +1,5 @@
-# skill-management-cli Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-cli-management-and-adapters. Update Purpose after archive.
-## Requirements
 ### Requirement: Search Remote Skills
 
 The system SHALL provide a CLI command named `skillex` that can search skills from a remote catalog using text and optional filters.
@@ -104,4 +101,3 @@ The system SHALL normalize common compatibility aliases to canonical adapter ide
 
 - **WHEN** the user runs `skillex search docs --compatibility gemini-cli --repo owner/repo`
 - **THEN** the CLI treats `gemini-cli` as `gemini`
-

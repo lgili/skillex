@@ -5,7 +5,7 @@ TBD - created by archiving change add-first-party-skills-catalog. Update Purpose
 ## Requirements
 ### Requirement: Publish First-Party Skills In This Repository
 
-The repository SHALL expose first-party skills in a catalog structure consumable by the `askill` CLI.
+The repository SHALL expose first-party skills in a catalog structure consumable by the `skillex` CLI.
 
 #### Scenario: Catalog file lists first-party skills
 

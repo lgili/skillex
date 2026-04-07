@@ -1,8 +1,5 @@
-# adapter-sync Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-adapter-sync. Update Purpose after archive.
-## Requirements
 ### Requirement: Sync Installed Skills To Active Adapter
 
 The system SHALL provide a command named `skillex` to synchronize installed skills into files consumed by the active adapter.
@@ -17,22 +14,6 @@ The system SHALL provide a command named `skillex` to synchronize installed skil
 - **WHEN** the user runs `skillex sync --adapter cursor`
 - **THEN** the CLI synchronizes installed skills to the `cursor` adapter targets
 - **AND** does not require changing the stored active adapter
-
-### Requirement: Preserve Manual Content In Shared Files
-
-The system SHALL preserve user-authored content in shared instruction files while updating the managed skills content.
-
-#### Scenario: Sync into existing AGENTS.md
-
-- **WHEN** the workspace already contains manual content in `AGENTS.md`
-- **THEN** the CLI updates only its managed block
-- **AND** leaves unrelated user content unchanged
-
-#### Scenario: Sync into existing Copilot instructions
-
-- **WHEN** the workspace already contains manual content in `.github/copilot-instructions.md`
-- **THEN** the CLI updates only its managed block
-- **AND** leaves unrelated user content unchanged
 
 ### Requirement: Generate Adapter-Specific Files
 
@@ -132,20 +113,3 @@ The system SHALL synchronize installed skills into the official project instruct
 
 - **WHEN** the active adapter is `windsurf`
 - **THEN** the CLI writes a generated rules file to `.windsurf/rules/skillex-skills.md`
-
-### Requirement: Preserve Manual Content In Additional Shared Files
-
-The system SHALL preserve user-authored content in shared instruction files for newly supported adapters while updating the managed skills content.
-
-#### Scenario: Sync into existing CLAUDE.md
-
-- **WHEN** the workspace already contains manual content in `CLAUDE.md`
-- **THEN** the CLI updates only its managed block
-- **AND** leaves unrelated user content unchanged
-
-#### Scenario: Sync into existing GEMINI.md
-
-- **WHEN** the workspace already contains manual content in `GEMINI.md`
-- **THEN** the CLI updates only its managed block
-- **AND** leaves unrelated user content unchanged
-
