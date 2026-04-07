@@ -1,7 +1,7 @@
 {
   "name": "skillex",
   "version": "0.2.0",
-  "description": "Skillex CLI para listar, instalar e sincronizar skills de agentes a partir de um catalogo no GitHub.",
+  "description": "CLI to list, install, and synchronize AI agent skills from GitHub-hosted catalogs.",
   "type": "module",
   "repository": {
     "type": "git",

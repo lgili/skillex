@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-07
+
 ### Added
+- Multi-source catalogs with workspace-managed source lists and a default official source at `lgili/skillex@main`
+- `source add`, `source remove`, and `source list` commands for managing configured catalog sources
+- Bootstrapped `create-skills` flow for scaffolding full skill-catalog repositories with automatic root catalog registration
+- Helper scripts for `create-skills` repository bootstrap and root catalog validation
+- Symlink sync mode: skills stored once in `.agent-skills/skills/<id>/` and symlinked to adapter targets with relative paths
+- `run` command: execute skill scripts defined in `skill.json` via `scripts.<name>`
+- Direct GitHub install: `skillex install owner/repo/path@ref` installs skills without a catalog
+- Interactive TUI for `list` and `search` using `@inquirer/prompts`
+- Context auto-inject: skills with `autoInject: true` are included automatically on every sync
+- Compatibility aliases for all major AI agents: `codex`, `copilot`, `cline`, `cursor`, `claude`, `gemini`, `windsurf`
 - `doctor` command with 6 read-only workspace health checks (lockfile, repo, adapter, GitHub reachability, token status, cache freshness)
 - `config get <key>` / `config set <key> <value>` commands for persistent global preferences stored in `~/.askillrc.json` (XDG-aware)
 - `src/output.ts` module with `success()`, `info()`, `warn()`, `error()`, `debug()` helpers; respects `NO_COLOR` env and `isTTY`
@@ -23,26 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `onProgress` callback in `installSkills()` for programmatic progress reporting
 
 ### Changed
+- Full TypeScript migration: all source files converted to `.ts` with `strict: true`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`
+- Module resolution updated to `NodeNext` with explicit `.js` import extensions
 - All user-facing strings translated from Portuguese to English
 - HTTP error messages rewritten to be actionable (rate limit, 404 with repo hint, 5xx retry suggestion)
 - `--verbose` HTTP logging: URL and status code logged via `debug()` on every request
 
 ### Fixed
 - `AdapterNotFoundError` message was in Portuguese; now reads "Unknown adapter: <id>"
-
-## [0.2.0] - 2026-04-07
-
-### Added
-- Symlink sync mode: skills stored once in `.agent-skills/skills/<id>/` and symlinked to adapter targets with relative paths
-- `run` command: execute skill scripts defined in `skill.json` via `scripts.<name>`
-- Direct GitHub install: `skillex install owner/repo/path@ref` installs skills without a catalog
-- Interactive TUI for `list` and `search` using `@inquirer/prompts`
-- Context auto-inject: skills with `autoInject: true` are included automatically on every sync
-- Compatibility aliases for all major AI agents: `codex`, `copilot`, `cline`, `cursor`, `claude`, `gemini`, `windsurf`
-
-### Changed
-- Full TypeScript migration: all source files converted to `.ts` with `strict: true`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`
-- Module resolution updated to `NodeNext` with explicit `.js` import extensions
 
 ## [0.1.1] - 2026-04-06
 
