@@ -42,9 +42,12 @@ npx skillex@latest list
 # 3. Install a skill
 npx skillex@latest install create-skills
 
-# 4. Sync skills into your agent's config file
+# 4. Write the installed skills into your agent's config file
+#    ⚠️  This step is required — without it, your agent cannot see the skills.
 npx skillex@latest sync
 ```
+
+> **Important:** `install` downloads skill files locally. `sync` is what actually writes the skill instructions into your agent's configuration file (e.g. `CLAUDE.md`, `AGENTS.md`, `.cursorrules`). **You must run `sync` after every install or update for your agent to pick up the changes.** Use `--auto-sync` at `init` time to have this happen automatically.
 
 After `init`, Skillex saves the configured source list in the local lockfile. New workspaces start with `lgili/skillex@main` by default, and you can add more sources later with `skillex source add`.
 
@@ -162,6 +165,8 @@ skillex install owner/repo/path/to/skill@main --trust
 | `--repo <owner/repo>` | Limit resolution to a single source when needed. |
 | `--trust` | Skip confirmation prompt for direct GitHub installs. |
 
+> **After installing,** run `skillex sync` to write the skills into your agent's config file. Without this step, the agent will not see the newly installed skills. If you initialized with `--auto-sync`, this happens automatically.
+
 ---
 
 ### `update`
@@ -191,7 +196,7 @@ skillex rm git-master code-review
 
 ### `sync`
 
-Write all installed skills into the active adapter's config file.
+Write all installed skills into the active adapter's config file (e.g. `CLAUDE.md`, `AGENTS.md`, `.cursorrules`). **This is the step that makes skills visible to your AI agent.** Run it after every `install`, `update`, or `remove`.
 
 ```bash
 # Sync to the detected adapter
@@ -212,6 +217,25 @@ skillex sync --mode copy
 | `--dry-run` | Show what would change without writing anything. |
 | `--adapter <id>` | Override the active adapter for this sync. |
 | `--mode copy\|symlink` | File write strategy (default: `symlink` for dedicated-file adapters). |
+
+#### Using multiple agents in the same workspace
+
+`sync` writes to one adapter at a time. If you use more than one AI agent in the same folder (e.g. Claude and Codex), run `sync` once for each:
+
+```bash
+# Write skills into CLAUDE.md
+skillex sync --adapter claude
+
+# Write skills into AGENTS.md (Codex)
+skillex sync --adapter codex
+```
+
+Each adapter writes to its own target file, so the two syncs are independent and non-destructive. To avoid running both commands manually after every change, initialize with `--auto-sync` and then re-run `skillex init --adapter <id>` for each adapter you want covered — or simply alias both commands in your workflow:
+
+```bash
+# Sync to all agents at once (shell alias / Makefile target)
+skillex sync --adapter claude && skillex sync --adapter codex
+```
 
 ---
 
@@ -337,7 +361,7 @@ Skillex auto-detects the AI agent you use by looking for known marker files in y
 
 | Adapter ID | Agent | Detection Markers | Sync Target |
 |------------|-------|-------------------|-------------|
-| `codex` | OpenAI Codex | `AGENTS.md`, `.codex/` | `AGENTS.md` |
+| `codex` | OpenAI Codex | `AGENTS.md`, `.codex/` | `.codex/skills/skillex-skills.md` |
 | `copilot` | GitHub Copilot | `.github/copilot-instructions.md` | `.github/copilot-instructions.md` |
 | `cline` | Cline / Roo Code | `.cline/`, `.roo/`, `.clinerules` | `.clinerules/skillex-skills.md` |
 | `cursor` | Cursor | `.cursor/`, `.cursorrules` | `.cursor/rules/skillex-skills.mdc` |
@@ -345,9 +369,11 @@ Skillex auto-detects the AI agent you use by looking for known marker files in y
 | `gemini` | Gemini CLI | `GEMINI.md`, `.gemini/` | `GEMINI.md` |
 | `windsurf` | Windsurf | `.windsurf/`, `.windsurf/rules/` | `.windsurf/rules/skillex-skills.md` |
 
-**Shared-file adapters** (`codex`, `copilot`, `claude`, `gemini`) use a **managed block** — Skillex writes between `<!-- SKILLEX:START -->` and `<!-- SKILLEX:END -->` markers while preserving everything else in the file.
+**Shared-file adapters** (`copilot`, `claude`, `gemini`) use a **managed block** — Skillex writes between `<!-- SKILLEX:START -->` and `<!-- SKILLEX:END -->` markers while preserving everything else in the file.
 
-**Dedicated-file adapters** (`cline`, `cursor`, `windsurf`) generate a file in `.agent-skills/generated/` and create a relative symlink at the adapter's target path. Use `--mode copy` to write directly instead.
+**Dedicated-file adapters** (`codex`, `cline`, `cursor`, `windsurf`) generate a file in `.agent-skills/generated/` and create a relative symlink at the adapter's target path (e.g. `.codex/skills/skillex-skills.md`). Use `--mode copy` to write directly instead. Your `AGENTS.md` is left untouched.
+
+> **Migrating from a previous version?** If you had skill content injected into `AGENTS.md` by an older version of Skillex, remove the block between `<!-- SKILLEX:START -->` and `<!-- SKILLEX:END -->` manually and run `skillex sync` to write to the new target.
 
 Compatibility aliases are normalized automatically: `claude-code` → `claude`, `github-copilot` → `copilot`, `roo-code` → `cline`, `gemini-cli` → `gemini`.
 

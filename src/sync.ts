@@ -285,6 +285,7 @@ function buildManagedFileContent(adapterId: string, body: string, autoInjectBloc
         "",
       ].join("\n");
     case "cline":
+    case "codex":
       return `${sections.join("\n\n")}\n`;
     default:
       throw new SyncError(`Adapter desconhecido: ${adapterId}`, "SYNC_ADAPTER_UNKNOWN");

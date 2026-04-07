@@ -12,8 +12,8 @@ const ADAPTERS: AdapterConfig[] = [
       { path: ".codex", weight: 12 },
       { path: ".codex/skills", weight: 16 },
     ],
-    syncTarget: "AGENTS.md",
-    syncMode: "managed-block",
+    syncTarget: ".codex/skills/skillex-skills.md",
+    syncMode: "managed-file",
   },
   {
     id: "copilot",
