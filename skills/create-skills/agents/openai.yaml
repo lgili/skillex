@@ -1,0 +1,7 @@
+interface:
+  display_name: "Create Skills"
+  short_description: "Scaffold first-party repo skills"
+  default_prompt: "Use $create-skills to scaffold a new first-party skill in this repository."
+
+policy:
+  allow_implicit_invocation: true

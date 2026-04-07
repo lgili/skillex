@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "repo": "lgili/askill",
+  "ref": "main",
+  "skills": [
+    {
+      "id": "create-skills",
+      "name": "Create Skills",
+      "version": "0.1.0",
+      "description": "Scaffold new first-party skills for this repository with the expected SKILL.md, skill.json, agents/openai.yaml, and catalog entry.",
+      "path": "skills/create-skills",
+      "entry": "SKILL.md",
+      "files": [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/repo-format.md",
+        "scripts/init_repo_skill.js"
+      ],
+      "compatibility": [
+        "codex",
+        "copilot",
+        "cursor",
+        "cline"
+      ],
+      "tags": [
+        "skills",
+        "catalog",
+        "scaffold"
+      ],
+      "author": "lgili"
+    }
+  ]
+}

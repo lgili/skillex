@@ -1,0 +1,25 @@
+{
+  "id": "create-skills",
+  "name": "Create Skills",
+  "version": "0.1.0",
+  "description": "Scaffold new first-party skills for this repository with the expected metadata and catalog entry.",
+  "author": "lgili",
+  "tags": [
+    "skills",
+    "catalog",
+    "scaffold"
+  ],
+  "compatibility": [
+    "codex",
+    "copilot",
+    "cursor",
+    "cline"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/repo-format.md",
+    "scripts/init_repo_skill.js"
+  ]
+}

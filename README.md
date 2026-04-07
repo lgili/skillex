@@ -84,6 +84,36 @@ Assim, o fluxo final fica simples e direto:
 npx @lgili/askill@latest init --repo seu-user/seu-repo
 ```
 
+## First-Party Skills
+
+Este mesmo repositório também funciona como catálogo first-party de skills.
+
+- catálogo na raiz: `catalog.json`
+- skills publicadas: `skills/<skill-id>/`
+- primeira skill: `create-skills`
+
+Listar skills publicadas neste repositório:
+
+```bash
+npx @lgili/askill@latest list --repo lgili/askill
+```
+
+Instalar a skill de autoria:
+
+```bash
+npx @lgili/askill@latest install create-skills --repo lgili/askill
+```
+
+Scaffold local de uma nova skill no formato do repositório:
+
+```bash
+node skills/create-skills/scripts/init_repo_skill.js \
+  --root . \
+  --skill-id my-skill \
+  --name "My Skill" \
+  --description "Describe what the skill does and when to use it."
+```
+
 ## CLI implementado
 
 - `askill init`: cria ou atualiza `.agent-skills/skills.json` e detecta o adapter do workspace
