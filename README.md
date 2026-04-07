@@ -1,5 +1,8 @@
 # Open Agent Skills
 
+[![CI](https://github.com/lgili/askill/actions/workflows/ci.yml/badge.svg)](https://github.com/lgili/askill/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/%40lgili%2Faskill)](https://www.npmjs.com/package/@lgili/askill)
+
 CLI inicial para distribuir, listar e instalar skills hospedadas em um repositório GitHub.
 
 ## Por que usar Node + `npx`
@@ -244,6 +247,7 @@ O workflow de release valida:
 - se a tag bate com a versão do `package.json`
 - se os testes passam
 - se o pacote empacota corretamente antes do `npm publish`
+- e cria uma GitHub Release com notas automáticas para a tag
 
 ## Segredo necessario no GitHub
 
