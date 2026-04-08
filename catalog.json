@@ -4,6 +4,9 @@
   "ref": "main",
   "skills": [
     {
+      "id": "c-pro"
+    },
+    {
       "id": "code-review"
     },
     {
