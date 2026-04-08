@@ -1,0 +1,37 @@
+{
+  "id": "technical-writing-pro",
+  "name": "Technical Writing Pro",
+  "version": "1.0.0",
+  "description": "Technical and scientific writing for concise English engineering reports, design notes, validation documents, and failure analyses, with strong use of equations, tables, charts, figures, and evidence-first structure.",
+  "author": "lgili",
+  "tags": [
+    "technical-writing",
+    "scientific-writing",
+    "engineering-report",
+    "documentation",
+    "reporting"
+  ],
+  "compatibility": [
+    "codex",
+    "copilot",
+    "cline",
+    "cursor",
+    "claude",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/report-structure.md",
+    "references/style-and-language.md",
+    "references/visual-explanation-patterns.md",
+    "references/equations-and-notation.md",
+    "references/review-checklist.md",
+    "scripts/scaffold_report_outline.py"
+  ],
+  "scripts": {
+    "outline": "python scripts/scaffold_report_outline.py"
+  }
+}

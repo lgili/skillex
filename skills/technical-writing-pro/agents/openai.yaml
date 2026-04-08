@@ -1,0 +1,7 @@
+interface:
+  display_name: "Technical Writing Pro"
+  short_description: "Concise scientific English for technical reports with equations, tables, charts, and figures"
+  default_prompt: "Apply Technical Writing Pro to write or rewrite this report in concise scientific English, minimize filler, and improve explanation with equations, tables, charts, figures, and evidence-first structure."
+
+policy:
+  allow_implicit_invocation: true
