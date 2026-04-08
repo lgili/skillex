@@ -96,6 +96,18 @@ export async function removePath(targetPath: string): Promise<void> {
 }
 
 /**
+ * Copies a file or directory recursively to a destination path.
+ *
+ * @param sourcePath - Existing source path.
+ * @param targetPath - Destination path.
+ */
+export async function copyPath(sourcePath: string, targetPath: string): Promise<void> {
+  await ensureDir(path.dirname(targetPath));
+  await removePath(targetPath);
+  await fs.cp(sourcePath, targetPath, { recursive: true, force: true });
+}
+
+/**
  * Creates a relative symlink and reports whether the caller should fall back to copy mode.
  *
  * @param targetPath - Absolute path the link should point to.
@@ -104,15 +116,17 @@ export async function removePath(targetPath: string): Promise<void> {
  */
 export async function createSymlink(targetPath: string, linkPath: string): Promise<CreateSymlinkResult> {
   const absoluteTarget = path.resolve(targetPath);
+  const relativeTarget = path.relative(path.dirname(linkPath), absoluteTarget) || ".";
   await ensureDir(path.dirname(linkPath));
   await removePath(linkPath);
 
   try {
-    await fs.symlink(absoluteTarget, linkPath);
+    const stats = await fs.lstat(absoluteTarget);
+    await fs.symlink(relativeTarget, linkPath, stats.isDirectory() ? "dir" : "file");
     return {
       ok: true,
       fallback: false,
-      relativeTarget: absoluteTarget,
+      relativeTarget,
     };
   } catch (error) {
     if (
@@ -124,7 +138,7 @@ export async function createSymlink(targetPath: string, linkPath: string): Promi
       return {
         ok: false,
         fallback: true,
-        relativeTarget: absoluteTarget,
+        relativeTarget,
       };
     }
     throw error;

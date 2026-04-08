@@ -4,16 +4,19 @@
 TBD - created by archiving change refactor-typescript-migration. Update Purpose after archive.
 ## Requirements
 ### Requirement: Typed Adapter Configuration
-Every adapter definition SHALL be described by the `AdapterConfig` TypeScript interface with typed fields for `id: string`, `label: string`, `markers: AdapterMarker[]`, `syncTarget: string`, optional `legacySyncTargets?: string[]`, and `syncMode: SyncMode`.
+Every adapter definition SHALL be described by the `AdapterConfig` TypeScript interface with typed fields for `id: string`, `label: string`, `markers: AdapterMarker[]`, `syncMode: "managed-block" | "managed-file" | "managed-directory"`, optional `syncTarget?: string`, optional `globalSyncTarget?: string`, and optional `legacySyncTargets?: string[]`.
 
-#### Scenario: Known adapter lookup returns typed object
-- **WHEN** `getAdapter(id)` is called with a known adapter ID such as `"claude"`
-- **THEN** it returns an object that satisfies `AdapterConfig` with all fields present and correctly typed
+#### Scenario: Known directory-native adapter lookup returns typed object
+- **WHEN** `getAdapter("codex")` is called
+- **THEN** it returns an object that satisfies `AdapterConfig`
+- **AND** the object includes `syncMode: "managed-directory"`
+- **AND** includes both a workspace `syncTarget` and a global `globalSyncTarget`
 
-#### Scenario: Unknown adapter throws typed error
-- **WHEN** `getAdapter(id)` is called with an unrecognised ID
-- **THEN** it throws an `AdapterNotFoundError` whose `message` includes the unknown ID
-- **AND** the error is not a generic `Error`
+#### Scenario: Known file-based adapter lookup returns typed object
+- **WHEN** `getAdapter("cursor")` is called
+- **THEN** it returns an object that satisfies `AdapterConfig`
+- **AND** the object includes `syncMode: "managed-file"`
+- **AND** may omit `globalSyncTarget`
 
 ### Requirement: Typed Detection Result
 `detectAdapters(cwd: string)` SHALL be typed as returning `Promise<string[]>` where every resolved element is a canonical adapter identifier.

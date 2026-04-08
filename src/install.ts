@@ -1,5 +1,11 @@
 import * as path from "node:path";
-import { DEFAULT_AGENT_SKILLS_DIR, DEFAULT_REF, DEFAULT_REPO, getStatePaths } from "./config.js";
+import {
+  DEFAULT_AGENT_SKILLS_DIR,
+  DEFAULT_INSTALL_SCOPE,
+  DEFAULT_REF,
+  DEFAULT_REPO,
+  getScopedStatePaths,
+} from "./config.js";
 import { confirmAction } from "./confirm.js";
 import { ensureDir, pathExists, readJson, removePath, writeJson, writeText } from "./fs.js";
 import { fetchOptionalJson, fetchOptionalText, fetchText } from "./http.js";
@@ -22,9 +28,11 @@ import type {
   ProjectOptions,
   RemoveSkillsResult,
   ResolvedSkillSelection,
+  StatePaths,
   SourcedSkillManifest,
   SkillDownloader,
   SkillManifest,
+  InstallScope,
   SyncCommandResult,
   SyncWriteMode,
   UpdateInstalledSkillsResult,
@@ -64,7 +72,7 @@ interface DirectInstallPayload {
 export async function initProject(options: ProjectOptions = {}): Promise<InitProjectResult> {
   try {
     const cwd = options.cwd || process.cwd();
-    const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+    const statePaths = resolveStatePathsForOptions(cwd, options);
     const now = getNow(options);
 
     await ensureDir(statePaths.stateDir);
@@ -93,10 +101,12 @@ export async function initProject(options: ProjectOptions = {}): Promise<InitPro
     lockfile.updatedAt = now();
     await writeJson(statePaths.lockfilePath, lockfile);
 
-    // Create .gitignore for the state directory on first init
-    const gitignorePath = path.join(statePaths.stateDir, ".gitignore");
-    if (!(await pathExists(gitignorePath))) {
-      await writeText(gitignorePath, ".cache/\n*.log\n");
+    // Create .gitignore for the local state directory on first init.
+    if (statePaths.scope === "local") {
+      const gitignorePath = path.join(statePaths.stateDir, ".gitignore");
+      if (!(await pathExists(gitignorePath))) {
+        await writeText(gitignorePath, ".cache/\n*.log\n");
+      }
     }
 
     return { created: !existing, statePaths, lockfile };
@@ -106,7 +116,7 @@ export async function initProject(options: ProjectOptions = {}): Promise<InitPro
 }
 
 /**
- * Installs one or more catalog skills or direct GitHub skills into the local workspace state.
+ * Installs one or more catalog skills or direct GitHub skills into the selected Skillex state.
  *
  * @param requestedSkillIds - Requested skill ids or `owner/repo[@ref]` direct references.
  * @param options - Installation options.
@@ -119,7 +129,7 @@ export async function installSkills(
 ): Promise<InstallSkillsResult> {
   try {
     const cwd = options.cwd || process.cwd();
-    const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+    const statePaths = resolveStatePathsForOptions(cwd, options);
     const now = getNow(options);
     const catalogLoader = options.catalogLoader || loadCatalog;
     const downloader = options.downloader || downloadSkill;
@@ -191,6 +201,7 @@ export async function installSkills(
       withAgentSkillsDir(
         {
           cwd,
+          scope: options.scope,
           adapter: lockfile.adapters.active,
           enabled: lockfile.settings.autoSync,
           now,
@@ -226,14 +237,19 @@ export async function updateInstalledSkills(
 ): Promise<UpdateInstalledSkillsResult> {
   try {
     const cwd = options.cwd || process.cwd();
-    const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+    const statePaths = resolveStatePathsForOptions(cwd, options);
     const now = getNow(options);
     const catalogLoader = options.catalogLoader || loadCatalog;
     const downloader = options.downloader || downloadSkill;
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
     if (!existing) {
-      throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
+      throw new InstallError(
+        statePaths.scope === "global"
+          ? "No global installation found. Run: skillex init --global --adapter <id>"
+          : "No local installation found. Run: skillex init",
+        "LOCKFILE_MISSING",
+      );
     }
 
     const defaultSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
@@ -292,6 +308,7 @@ export async function updateInstalledSkills(
       withAgentSkillsDir(
         {
           cwd,
+          scope: options.scope,
           adapter: lockfile.adapters.active,
           enabled: lockfile.settings.autoSync,
           now,
@@ -314,7 +331,7 @@ export async function updateInstalledSkills(
 }
 
 /**
- * Removes installed skills from the local workspace state.
+ * Removes installed skills from the selected Skillex state.
  *
  * @param requestedSkillIds - Skill ids to remove.
  * @param options - Remove options.
@@ -327,12 +344,17 @@ export async function removeSkills(
 ): Promise<RemoveSkillsResult> {
   try {
     const cwd = options.cwd || process.cwd();
-    const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+    const statePaths = resolveStatePathsForOptions(cwd, options);
     const now = getNow(options);
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
     if (!existing) {
-      throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
+      throw new InstallError(
+        statePaths.scope === "global"
+          ? "No global installation found. Run: skillex init --global --adapter <id>"
+          : "No local installation found. Run: skillex init",
+        "LOCKFILE_MISSING",
+      );
     }
 
     if (!requestedSkillIds.length) {
@@ -351,7 +373,7 @@ export async function removeSkills(
         continue;
       }
 
-      await removePath(path.resolve(cwd, metadata.path));
+      await removePath(resolveInstalledSkillPath(cwd, metadata.path));
       delete lockfile.installed[skillId];
       removedSkills.push(skillId);
     }
@@ -362,6 +384,7 @@ export async function removeSkills(
       withAgentSkillsDir(
         {
           cwd,
+          scope: options.scope,
           adapter: lockfile.adapters.active,
           enabled: lockfile.settings.autoSync,
           now,
@@ -388,17 +411,22 @@ export async function removeSkills(
  *
  * @param options - Sync options.
  * @returns Sync command result.
- * @throws {InstallError} When workspace state is missing or invalid.
+ * @throws {InstallError} When the selected install scope is missing or invalid.
  */
 export async function syncInstalledSkills(options: ProjectOptions = {}): Promise<SyncCommandResult> {
   try {
     const cwd = options.cwd || process.cwd();
-    const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+    const statePaths = resolveStatePathsForOptions(cwd, options);
     const now = getNow(options);
     const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
     if (!existing) {
-      throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
+      throw new InstallError(
+        statePaths.scope === "global"
+          ? "No global installation found. Run: skillex init --global --adapter <id>"
+          : "No local installation found. Run: skillex init",
+        "LOCKFILE_MISSING",
+      );
     }
 
     const defaultSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
@@ -417,9 +445,11 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
     });
     const syncResult = await syncAdapterFiles({
       cwd,
+      scope: statePaths.scope,
       adapterId,
       statePaths,
       skills,
+      previousSkillIds: lockfile.sync?.skillIds || [],
       ...(options.mode ? { mode: options.mode } : {}),
       ...(options.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
     });
@@ -443,6 +473,7 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
       adapter: syncResult.adapter,
       targetPath: syncResult.targetPath,
       syncedAt: now(),
+      skillIds: skills.map((skill) => skill.id),
     };
     lockfile.syncMode = syncResult.syncMode;
     lockfile.updatedAt = now();
@@ -463,14 +494,14 @@ export async function syncInstalledSkills(options: ProjectOptions = {}): Promise
 }
 
 /**
- * Reads the local workspace lockfile when it exists.
+ * Reads the selected Skillex lockfile when it exists.
  *
  * @param options - Project lookup options.
  * @returns Normalized lockfile state or `null` when no install exists.
  */
 export async function getInstalledSkills(options: ProjectOptions = {}): Promise<LockfileState | null> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = resolveStatePathsForOptions(cwd, options);
   if (!(await pathExists(statePaths.lockfilePath))) {
     return null;
   }
@@ -490,7 +521,7 @@ export async function getInstalledSkills(options: ProjectOptions = {}): Promise<
  */
 export async function resolveProjectSource(options: ProjectOptions = {}): Promise<CatalogSource> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = resolveStatePathsForOptions(cwd, options);
   const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
   return resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
@@ -504,7 +535,7 @@ export async function resolveProjectSource(options: ProjectOptions = {}): Promis
  */
 export async function resolveProjectSources(options: ProjectOptions = {}): Promise<LockfileSource[]> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = resolveStatePathsForOptions(cwd, options);
   const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
   if (options.repo) {
@@ -560,7 +591,7 @@ export async function addProjectSource(
   options: ProjectOptions = {},
 ): Promise<LockfileState> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = resolveStatePathsForOptions(cwd, options);
   const now = getNow(options);
   await ensureDir(statePaths.stateDir);
   await ensureDir(statePaths.skillsDirPath);
@@ -587,12 +618,17 @@ export async function addProjectSource(
  */
 export async function removeProjectSource(repo: string, options: ProjectOptions = {}): Promise<LockfileState> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = resolveStatePathsForOptions(cwd, options);
   const now = getNow(options);
   const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
 
   if (!existing) {
-    throw new InstallError("No local installation found. Run: skillex init", "LOCKFILE_MISSING");
+    throw new InstallError(
+      statePaths.scope === "global"
+        ? "No global installation found. Run: skillex init --global --adapter <id>"
+        : "No local installation found. Run: skillex init",
+      "LOCKFILE_MISSING",
+    );
   }
 
   const fallbackSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
@@ -618,7 +654,7 @@ export async function removeProjectSource(repo: string, options: ProjectOptions 
  */
 export async function listProjectSources(options: ProjectOptions = {}): Promise<LockfileSource[]> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = resolveStatePathsForOptions(cwd, options);
   const existing = await readJson<LockfileState>(statePaths.lockfilePath, null);
   const fallbackSource = resolveSource(toCatalogSourceInput(options, resolvePrimarySourceOverride(options, existing)));
   return getLockfileSources(existing, fallbackSource);
@@ -974,12 +1010,15 @@ function parseCatalogSource(source: string): LockfileSource | null {
 
 function buildInstalledMetadata(
   skill: SkillManifest,
-  context: { cwd: string; statePaths: ReturnType<typeof getStatePaths>; installedAt: string; source: string },
+  context: { cwd: string; statePaths: StatePaths; installedAt: string; source: string },
 ): LockfileState["installed"][string] {
   return {
     name: skill.name,
     version: skill.version,
-    path: toPosix(path.relative(context.cwd, path.join(context.statePaths.skillsDirPath, skill.id))),
+    path:
+      context.statePaths.scope === "global"
+        ? toPosix(path.join(context.statePaths.skillsDirPath, skill.id))
+        : toPosix(path.relative(context.cwd, path.join(context.statePaths.skillsDirPath, skill.id))),
     installedAt: context.installedAt,
     compatibility: skill.compatibility,
     tags: skill.tags,
@@ -1000,7 +1039,7 @@ function resolveInstalledSkillIds(lockfile: LockfileState, requestedSkillIds: st
   const installedSet = new Set(installedIds);
   for (const skillId of requestedSkillIds) {
     if (!installedSet.has(skillId)) {
-      throw new InstallError(`Skill "${skillId}" is not installed locally.`, "SKILL_NOT_INSTALLED");
+      throw new InstallError(`Skill "${skillId}" is not installed in the selected scope.`, "SKILL_NOT_INSTALLED");
     }
   }
 
@@ -1017,6 +1056,7 @@ function toPosix(value: string): string {
 
 async function maybeAutoSync(options: {
   cwd: string;
+  scope?: InstallScope | undefined;
   agentSkillsDir?: string | undefined;
   adapter: string | null;
   enabled: boolean;
@@ -1030,6 +1070,7 @@ async function maybeAutoSync(options: {
 
   return syncInstalledSkills({
     cwd: options.cwd,
+    scope: options.scope || DEFAULT_INSTALL_SCOPE,
     ...(options.agentSkillsDir ? { agentSkillsDir: options.agentSkillsDir } : {}),
     ...(options.adapter ? { adapter: options.adapter } : {}),
     ...(options.mode ? { mode: options.mode } : {}),
@@ -1076,6 +1117,17 @@ function withAgentSkillsDir<T extends { agentSkillsDir?: string | undefined }>(
     ...options,
     ...(agentSkillsDir ? { agentSkillsDir } : {}),
   } as T;
+}
+
+function resolveStatePathsForOptions(cwd: string, options: ProjectOptions): StatePaths {
+  return getScopedStatePaths(cwd, {
+    scope: options.scope || DEFAULT_INSTALL_SCOPE,
+    baseDir: options.agentSkillsDir,
+  });
+}
+
+function resolveInstalledSkillPath(cwd: string, skillPath: string): string {
+  return path.isAbsolute(skillPath) ? skillPath : path.resolve(cwd, skillPath);
 }
 
 async function confirmDirectInstall(skillRef: string, options: InstallOptions): Promise<void> {

@@ -1,8 +1,4 @@
-# symlink-sync Specification
-
-## Purpose
-TBD - created by archiving change add-symlink-run-ui-and-direct-install. Update Purpose after archive.
-## Requirements
+## MODIFIED Requirements
 ### Requirement: Symlink-Based Sync For Dedicated Adapter Files
 Installed skills SHALL be stored in a managed store for the selected scope and materialized into adapter targets via symlink when possible.
 
@@ -28,13 +24,6 @@ On platforms where `fs.symlink` fails with `EPERM` or `ENOTSUP`, the system SHAL
 - **AND** a warning is printed to stderr describing the fallback
 - **AND** `skills.json` records `"syncMode": "copy"`
 
-### Requirement: Sync Mode Recorded in Lockfile
-The lockfile SHALL store a top-level `"syncMode": "symlink" | "copy"` field reflecting the mode used during the last sync operation.
-
-#### Scenario: Lockfile reflects symlink mode after successful sync
-- **WHEN** `syncAdapterFiles()` succeeds using symlinks
-- **THEN** `skills.json` contains `"syncMode": "symlink"`
-
 ### Requirement: Copy Mode Override Flag
 The `sync` command SHALL accept a `--mode copy` flag to force direct writes regardless of platform symlink support, allowing users to opt out of symlinks permanently.
 
@@ -42,4 +31,3 @@ The `sync` command SHALL accept a `--mode copy` flag to force direct writes rega
 - **WHEN** `skillex sync --adapter codex --mode copy` is executed on a platform that supports symlinks
 - **THEN** installed skill directories are copied to `.codex/skills/<skill-id>/` instead of linked
 - **AND** `skills.json` records `"syncMode": "copy"`
-

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import * as path from "node:path";
 import type { Writable } from "node:stream";
-import { DEFAULT_AGENT_SKILLS_DIR, getStatePaths } from "./config.js";
+import { DEFAULT_INSTALL_SCOPE, getScopedStatePaths } from "./config.js";
 import { confirmAction } from "./confirm.js";
 import { readJson } from "./fs.js";
 import { CliError } from "./types.js";
@@ -49,14 +49,22 @@ export async function runSkillScript(
   options: RunSkillOptions = {},
 ): Promise<number> {
   const cwd = options.cwd || process.cwd();
-  const statePaths = getStatePaths(cwd, options.agentSkillsDir || DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = getScopedStatePaths(cwd, {
+    scope: options.scope || DEFAULT_INSTALL_SCOPE,
+    baseDir: options.agentSkillsDir,
+  });
   const lockfile =
     (await readJson<{
       installed?: Record<string, { path?: string }>;
     }>(statePaths.lockfilePath, null)) || null;
 
   if (!lockfile) {
-    throw new CliError("Nenhuma instalacao local encontrada. Rode: skillex init", "LOCKFILE_MISSING");
+    throw new CliError(
+      statePaths.scope === "global"
+        ? "Nenhuma instalacao global encontrada. Rode: skillex init --global --adapter <id>"
+        : "Nenhuma instalacao local encontrada. Rode: skillex init",
+      "LOCKFILE_MISSING",
+    );
   }
 
   const metadata = lockfile.installed?.[skillId];
@@ -64,7 +72,7 @@ export async function runSkillScript(
     throw new CliError(`Skill "${skillId}" nao esta instalada.`, "SKILL_NOT_INSTALLED");
   }
 
-  const skillDir = path.resolve(cwd, metadata.path);
+  const skillDir = path.isAbsolute(metadata.path) ? metadata.path : path.resolve(cwd, metadata.path);
   const manifest =
     (await readJson<{ scripts?: Record<string, string> }>(path.join(skillDir, "skill.json"), {})) || {};
   const scripts = manifest.scripts || {};

@@ -4,6 +4,7 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
+import { getAdapter } from "../src/adapters.js";
 import { getStatePaths } from "../src/config.js";
 import { pathExists, writeText } from "../src/fs.js";
 import {
@@ -207,6 +208,104 @@ test("syncInstalledSkills cria symlink para adapters de arquivo dedicado por pad
 
   const state = assertState(await getInstalledSkills({ cwd }));
   assert.equal(state.syncMode, "symlink");
+});
+
+test("syncInstalledSkills materializa skills por pasta para codex e remove arquivo legado", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-codex-dir-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await setupInstalledSkill(cwd, { adapter: "codex" });
+  await writeText(path.join(cwd, ".codex", "skills", "skillex-skills.md"), "legado\n");
+
+  const result = await syncInstalledSkills({
+    cwd,
+    adapter: "codex",
+    now: () => "2026-04-06T00:20:00.000Z",
+  });
+
+  const targetDir = path.join(cwd, ".codex", "skills", "git-master");
+  assert.equal(result.sync.adapter, "codex");
+  assert.equal(result.sync.targetPath, ".codex/skills");
+  assert.equal(result.syncMode, "symlink");
+  assert.equal(await isSymlink(targetDir), true);
+  assert.equal(await pathExists(path.join(cwd, ".codex", "skills", "skillex-skills.md")), false);
+
+  const linkTarget = await fs.readlink(targetDir);
+  assert.match(linkTarget, /^\.\.\/\.\.\/\.agent-skills\/skills\/git-master$/);
+});
+
+test("syncInstalledSkills remove skill directory antiga ao re-sincronizar codex", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-codex-cleanup-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await setupInstalledSkill(cwd, { adapter: "codex" });
+  await syncInstalledSkills({
+    cwd,
+    adapter: "codex",
+    now: () => "2026-04-06T00:20:00.000Z",
+  });
+
+  await removeSkills(["git-master"], {
+    cwd,
+    now: () => "2026-04-06T00:30:00.000Z",
+  });
+  await syncInstalledSkills({
+    cwd,
+    adapter: "codex",
+    now: () => "2026-04-06T00:40:00.000Z",
+  });
+
+  assert.equal(await pathExists(path.join(cwd, ".codex", "skills", "git-master")), false);
+});
+
+test("syncInstalledSkills suporta scope global para adapter directory-native", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sync-global-"));
+  const globalStateDir = path.join(cwd, ".global-state");
+  const globalTargetDir = path.join(cwd, ".global-codex-skills");
+  const adapter = getAdapter("codex");
+  const previousGlobalTarget = adapter.globalSyncTarget;
+  adapter.globalSyncTarget = globalTargetDir;
+
+  t.after(async () => {
+    if (previousGlobalTarget) {
+      adapter.globalSyncTarget = previousGlobalTarget;
+    } else {
+      delete adapter.globalSyncTarget;
+    }
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await initProject({
+    cwd,
+    scope: "global",
+    agentSkillsDir: globalStateDir,
+    repo: "example/skills",
+    adapter: "codex",
+    now: () => "2026-04-06T00:00:00.000Z",
+  });
+  await installSkills(["git-master"], {
+    cwd,
+    scope: "global",
+    agentSkillsDir: globalStateDir,
+    catalogLoader: async () => createCatalog(),
+    downloader: createDownloader(),
+    now: () => "2026-04-06T00:10:00.000Z",
+  });
+
+  const result = await syncInstalledSkills({
+    cwd,
+    scope: "global",
+    agentSkillsDir: globalStateDir,
+    adapter: "codex",
+    now: () => "2026-04-06T00:20:00.000Z",
+  });
+
+  assert.equal(result.sync.targetPath, path.join(globalTargetDir).split(path.sep).join("/"));
+  assert.equal(await isSymlink(path.join(globalTargetDir, "git-master")), true);
 });
 
 test("syncInstalledSkills aceita --mode copy e grava arquivo regular", async (t: TestContext) => {

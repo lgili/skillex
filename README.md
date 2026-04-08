@@ -5,7 +5,7 @@
 [![Node.js >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Skillex** is a CLI that installs and synchronizes AI agent skills from a GitHub-hosted catalog into your workspace. It automatically injects skill instructions into the configuration file of whichever AI agent you use — Codex, Copilot, Cline, Cursor, Claude, Gemini, or Windsurf.
+**Skillex** is a CLI that installs and synchronizes AI agent skills from a GitHub-hosted catalog. It supports both workspace-local installs and user-global installs, and it exposes skills to major AI agents such as Codex, Copilot, Cline, Cursor, Claude, Gemini, and Windsurf.
 
 ---
 
@@ -47,7 +47,7 @@ npx skillex@latest install create-skills
 npx skillex@latest sync
 ```
 
-> **Important:** `install` downloads skill files locally. `sync` is what actually writes the skill instructions into your agent's configuration file (e.g. `.claude/skills/skillex-skills.md`, `.codex/skills/skillex-skills.md`, `.github/copilot-instructions.md`). **You must run `sync` after every install or update for your agent to pick up the changes.** Use `--auto-sync` at `init` time to have this happen automatically.
+> **Important:** `install` only stores skills in Skillex managed state. `sync` is what exposes them to your AI agent. For directory-native adapters such as Codex, Claude, and Gemini, `sync` materializes one folder per skill under the agent's `skills/` directory. For file-based adapters such as Copilot, Cursor, Cline, and Windsurf, `sync` updates the adapter's config file. **You must run `sync` after every install or update for your agent to pick up the changes.** Use `--auto-sync` at `init` time to have this happen automatically.
 
 After `init`, Skillex saves the configured source list in the local lockfile. New workspaces start with `lgili/skillex@main` by default, and you can add more sources later with `skillex source add`.
 
@@ -81,13 +81,14 @@ npx skillex <command>
 
 ### `init`
 
-Initialize (or re-initialize) the workspace. Creates `.agent-skills/skills.json`, detects your adapter, and writes `.agent-skills/.gitignore`.
+Initialize local or global Skillex state. Local scope creates `.agent-skills/skills.json` in the current workspace. Global scope creates `~/.skillex/skills.json`.
 
 ```bash
 skillex init
 skillex init --repo <owner/repo>
 skillex init --repo lgili/skillex --adapter cursor
 skillex init --repo lgili/skillex --auto-sync
+skillex init --global --adapter codex
 ```
 
 | Flag | Description |
@@ -96,6 +97,8 @@ skillex init --repo lgili/skillex --auto-sync
 | `--adapter <id>` | Force a specific adapter instead of auto-detecting. |
 | `--auto-sync` | Automatically run `sync` after every install, update, and remove. |
 | `--ref <branch>` | Use a specific branch or tag (default: `main`). |
+| `--scope <local\|global>` | Choose whether Skillex manages workspace or user-global state. |
+| `--global` | Shortcut for `--scope global`. |
 
 ---
 
@@ -157,6 +160,9 @@ skillex install code-review --repo myorg/my-skills
 
 # Install directly from a GitHub repository (no catalog needed)
 skillex install owner/repo/path/to/skill@main --trust
+
+# Install once for all workspaces
+skillex install create-skills --global
 ```
 
 | Flag | Description |
@@ -164,6 +170,8 @@ skillex install owner/repo/path/to/skill@main --trust
 | `--all` | Install every skill in the catalog. |
 | `--repo <owner/repo>` | Limit resolution to a single source when needed. |
 | `--trust` | Skip confirmation prompt for direct GitHub installs. |
+| `--scope <local\|global>` | Choose whether Skillex writes to `.agent-skills/` or `~/.skillex/`. |
+| `--global` | Shortcut for `--scope global`. |
 
 > **After installing,** run `skillex sync` to write the skills into your agent's config file. Without this step, the agent will not see the newly installed skills. If you initialized with `--auto-sync`, this happens automatically.
 
@@ -179,6 +187,9 @@ skillex update
 
 # Update a specific skill
 skillex update git-master
+
+# Update global skills
+skillex update --global
 ```
 
 ---
@@ -190,13 +201,14 @@ Remove one or more installed skills. Aliases: `rm`, `uninstall`.
 ```bash
 skillex remove git-master
 skillex rm git-master code-review
+skillex remove create-skills --global
 ```
 
 ---
 
 ### `sync`
 
-Write all installed skills into the active adapter's config file (e.g. `.claude/skills/skillex-skills.md`, `.codex/skills/skillex-skills.md`, `.github/copilot-instructions.md`). **This is the step that makes skills visible to your AI agent.** Run it after every `install`, `update`, or `remove`.
+Expose all installed skills to the active adapter. For `codex`, `claude`, and `gemini`, this creates one folder per skill under the adapter's `skills/` directory. For file-based adapters, it updates the adapter's config file. **This is the step that makes skills visible to your AI agent.** Run it after every `install`, `update`, or `remove`.
 
 ```bash
 # Sync to the detected adapter
@@ -210,27 +222,32 @@ skillex sync --adapter codex
 
 # Copy files instead of using symlinks
 skillex sync --mode copy
+
+# Sync globally to your user-level Codex skills directory
+skillex sync --global --adapter codex
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--dry-run` | Show what would change without writing anything. |
 | `--adapter <id>` | Override the active adapter for this sync. |
-| `--mode copy\|symlink` | File write strategy (default: `symlink` for dedicated-file adapters). |
+| `--mode copy\|symlink` | File write strategy (default: `symlink` for dedicated targets). |
+| `--scope <local\|global>` | Choose whether the sync reads local or global Skillex state. |
+| `--global` | Shortcut for `--scope global`. |
 
 #### Using multiple agents in the same workspace
 
 `sync` writes to one adapter at a time. If you use more than one AI agent in the same folder (e.g. Claude and Codex), run `sync` once for each:
 
 ```bash
-# Write skills into .claude/skills/skillex-skills.md
+# Write skill folders into .claude/skills/<skill-id>/
 skillex sync --adapter claude
 
-# Write skills into .codex/skills/skillex-skills.md
+# Write skill folders into .codex/skills/<skill-id>/
 skillex sync --adapter codex
 ```
 
-Each adapter writes to its own target file, so the two syncs are independent and non-destructive. To avoid running both commands manually after every change, initialize with `--auto-sync` and then re-run `skillex init --adapter <id>` for each adapter you want covered — or simply alias both commands in your workflow:
+Each adapter writes to its own target path, so the two syncs are independent and non-destructive. To avoid running both commands manually after every change, initialize with `--auto-sync` and then re-run `skillex init --adapter <id>` for each adapter you want covered — or simply alias both commands in your workflow:
 
 ```bash
 # Sync to all agents at once (shell alias / Makefile target)
@@ -262,10 +279,11 @@ skillex ui
 
 ### `status`
 
-Show the current local workspace state: adapter, installed skills, last sync.
+Show the current Skillex state for the selected scope: adapter, installed skills, last sync.
 
 ```bash
 skillex status
+skillex status --global
 ```
 
 ---
@@ -361,19 +379,23 @@ Skillex auto-detects the AI agent you use by looking for known marker files in y
 
 | Adapter ID | Agent | Detection Markers | Sync Target |
 |------------|-------|-------------------|-------------|
-| `codex` | OpenAI Codex | `AGENTS.md`, `.codex/` | `.codex/skills/skillex-skills.md` |
+| `codex` | OpenAI Codex | `AGENTS.md`, `.codex/` | `.codex/skills/<skill-id>/` |
 | `copilot` | GitHub Copilot | `.github/copilot-instructions.md` | `.github/copilot-instructions.md` |
 | `cline` | Cline / Roo Code | `.cline/`, `.roo/`, `.clinerules` | `.clinerules/skillex-skills.md` |
 | `cursor` | Cursor | `.cursor/`, `.cursorrules` | `.cursor/rules/skillex-skills.mdc` |
-| `claude` | Claude Code | `CLAUDE.md`, `.claude/` | `.claude/skills/skillex-skills.md` |
-| `gemini` | Gemini CLI | `GEMINI.md`, `.gemini/` | `.gemini/skills/skillex-skills.md` |
+| `claude` | Claude Code | `CLAUDE.md`, `.claude/` | `.claude/skills/<skill-id>/` |
+| `gemini` | Gemini CLI | `GEMINI.md`, `.gemini/` | `.gemini/skills/<skill-id>/` |
 | `windsurf` | Windsurf | `.windsurf/`, `.windsurf/rules/` | `.windsurf/rules/skillex-skills.md` |
 
 **Shared-file adapter** (`copilot`) uses a **managed block** — Skillex writes between `<!-- SKILLEX:START -->` and `<!-- SKILLEX:END -->` markers inside `.github/copilot-instructions.md`, preserving everything else in the file.
 
-**Dedicated-file adapters** (`codex`, `cline`, `claude`, `cursor`, `gemini`, `windsurf`) each generate a file in `~/.skillex/generated/<adapter>/` and create an absolute symlink at the adapter's target path (e.g. `.claude/skills/skillex-skills.md`). Use `--mode copy` to write directly instead.
+**Directory-native adapters** (`codex`, `claude`, `gemini`) expose one folder per installed skill and symlink each `<skill-id>/` directory to the managed Skillex store by default.
 
-> **Migrating from a previous version?** If you had skill content injected into `CLAUDE.md`, `GEMINI.md`, or `AGENTS.md` by an older version of Skillex, those legacy files are cleaned up automatically on the next `sync`. You can also remove the block manually.
+**Dedicated-file adapters** (`cline`, `cursor`, `windsurf`) still generate a file in `.agent-skills/generated/<adapter>/` and symlink the adapter target to that generated file by default.
+
+**Shared-file adapter** (`copilot`) updates a managed block inside `.github/copilot-instructions.md`.
+
+> **Migrating from a previous version?** If you previously had `skillex-skills.md` inside `.codex/skills/`, `.claude/skills/`, or `.gemini/skills/`, those legacy aggregate files are cleaned up automatically on the next `sync`.
 
 Compatibility aliases are normalized automatically: `claude-code` → `claude`, `github-copilot` → `copilot`, `roo-code` → `cline`, `gemini-cli` → `gemini`.
 
@@ -461,7 +483,7 @@ activationPrompt: "Always apply Git Master rules when the user asks for Git help
 Your skill content goes here...
 ```
 
-When `autoInject: true` and `activationPrompt` are set, `skillex sync` injects the activation prompt in a separate managed block at the top of the adapter's config file so the agent always has that context loaded.
+When `autoInject: true` and `activationPrompt` are set, `skillex sync` injects the activation prompt in a separate managed block for adapters that use a shared or dedicated config file.
 
 ---
 
@@ -510,7 +532,7 @@ CLI flags  >  GITHUB_TOKEN env var  >  ~/.askillrc.json  >  defaults
 
 ## Workspace Structure
 
-After `init` and a few installs, your workspace will look like this:
+After `skillex init` and a few local installs, your workspace will look like this:
 
 ```
 .agent-skills/
@@ -538,13 +560,27 @@ The `skills.json` lockfile records:
 - All installed skills with their versions, tags, compatibility, and install timestamps
 - Installation source (e.g. `github:owner/repo@ref` for direct installs)
 
-> **Tip:** Commit `.agent-skills/skills.json` and `.agent-skills/skills/` to version-control your skill setup. The `.cache/` directory is automatically excluded.
+For global installs, the same structure is stored under `~/.skillex/` instead of `.agent-skills/`.
+
+For directory-native adapters, `sync` creates per-skill directories such as:
+
+```text
+.codex/
+  skills/
+    git-master -> ../../.agent-skills/skills/git-master
+
+.claude/
+  skills/
+    git-master -> ../../.agent-skills/skills/git-master
+```
+
+> **Tip:** Commit `.agent-skills/skills.json` and `.agent-skills/skills/` to version-control your local team setup. The `.cache/` directory is automatically excluded.
 
 ---
 
 ## Auto-sync
 
-When `--auto-sync` is enabled at `init`, Skillex runs `sync` automatically after every `install`, `update`, and `remove`. This keeps your agent's config file always up to date.
+When `--auto-sync` is enabled at `init`, Skillex runs `sync` automatically after every `install`, `update`, and `remove`. This keeps your agent target path always up to date.
 
 ```bash
 # Enable at init time
@@ -552,6 +588,9 @@ skillex init --auto-sync
 
 # Or re-initialize to enable it
 skillex init --repo lgili/skillex --auto-sync
+
+# Enable it for global installs
+skillex init --global --adapter codex --auto-sync
 ```
 
 ---

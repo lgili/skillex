@@ -6,7 +6,7 @@ import {
   readCatalogCache,
   searchCatalogSkills,
 } from "./catalog.js";
-import { DEFAULT_AGENT_SKILLS_DIR, getDefaultSkillsDir, getStatePaths } from "./config.js";
+import { DEFAULT_INSTALL_SCOPE, getScopedStatePaths } from "./config.js";
 import {
   addProjectSource,
   getInstalledSkills,
@@ -24,7 +24,7 @@ import * as output from "./output.js";
 import { setVerbose } from "./output.js";
 import { parseSkillCommandReference, runSkillScript } from "./runner.js";
 import { runInteractiveUi } from "./ui.js";
-import type { ParsedArgs, ProjectOptions, SearchOptions, SyncWriteMode } from "./types.js";
+import type { InstallScope, ParsedArgs, ProjectOptions, SearchOptions, SyncWriteMode } from "./types.js";
 import { CliError } from "./types.js";
 import { VALID_CONFIG_KEYS, readUserConfig, writeUserConfig } from "./user-config.js";
 import type { UserConfig } from "./user-config.js";
@@ -38,18 +38,21 @@ type CliFlags = Record<string, string | boolean>;
 const COMMAND_HELP: Record<string, string> = {
   init: `Usage: skillex init [--repo <owner/repo>] [options]
 
-Initialize the local Skillex workspace.
+Initialize Skillex state for the local workspace or global user scope.
 
 Options:
   --repo <owner/repo>   GitHub repository with skills (default: lgili/skillex)
   --ref <ref>           Branch, tag, or commit (default: main)
   --adapter <id>        Force a specific adapter
   --auto-sync           Enable auto-sync after install/update/remove
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
   --cwd <path>          Target project directory (default: current directory)
 
 Example:
   skillex init
-  skillex init --repo myorg/my-skills`,
+  skillex init --repo myorg/my-skills
+  skillex init --global --adapter codex`,
 
   list: `Usage: skillex list [options]
 
@@ -91,6 +94,8 @@ Options:
   --ref <ref>           Branch, tag, or commit
   --trust               Skip confirmation for direct GitHub installs
   --adapter <id>        Target adapter
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
   --no-cache            Bypass local catalog cache
 
 Example:
@@ -104,31 +109,40 @@ Update installed skills to the latest catalog version.
 
 Options:
   --repo <owner/repo>   GitHub repository
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
   --no-cache            Bypass local catalog cache
 
 Example:
   skillex update
   skillex update git-master`,
 
-  remove: `Usage: skillex remove <skill-id...>
+  remove: `Usage: skillex remove <skill-id...> [options]
 
-Remove installed skills from the local workspace.
+Remove installed skills from the selected scope.
+
+Options:
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
 
 Example:
   skillex remove git-master code-review`,
 
   sync: `Usage: skillex sync [options]
 
-Synchronize installed skills to adapter target files.
+Synchronize installed skills to adapter targets.
 
 Options:
   --adapter <id>        Target adapter (overrides saved config)
   --dry-run             Preview changes without writing to disk
   --mode <symlink|copy> Sync write mode (default: symlink)
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
 
 Example:
   skillex sync
-  skillex sync --adapter cursor --dry-run`,
+  skillex sync --adapter cursor --dry-run
+  skillex sync --global --adapter codex`,
 
   run: `Usage: skillex run <skill-id:command> [options]
 
@@ -154,10 +168,12 @@ Example:
 
   status: `Usage: skillex status [options]
 
-Show the installation status of the current workspace.
+Show the installation status of the selected scope.
 
 Options:
   --cwd <path>          Target project directory
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
   --json                Output as JSON
 
 Example:
@@ -310,7 +326,7 @@ async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void
   });
 
   if (result.created) {
-    output.success(`Initialized at ${result.statePaths.stateDir}`);
+    output.success(`Initialized ${result.statePaths.scope} state at ${result.statePaths.stateDir}`);
   } else {
     output.info(`Already configured at ${result.statePaths.stateDir}`);
   }
@@ -415,7 +431,9 @@ async function handleInstall(positionals: string[], flags: CliFlags, userConfig:
     },
   });
 
-  output.success(`Installed ${result.installedCount} skill(s) to ${result.statePaths.stateDir}`);
+  output.success(
+    `Installed ${result.installedCount} skill(s) to ${result.statePaths.scope} state at ${result.statePaths.stateDir}`,
+  );
   for (const skill of result.installedSkills) {
     output.info(`  + ${skill.id}@${skill.version}`);
   }
@@ -462,17 +480,17 @@ async function handleSync(flags: CliFlags, userConfig: UserConfig): Promise<void
 
   if (result.dryRun) {
     output.info(`Preview: ${result.skillCount} skill(s) → ${result.sync.adapter}`);
-    output.info(`Target file : ${result.sync.targetPath}`);
+    output.info(`Target path : ${result.sync.targetPath}`);
     output.info(`Sync mode   : ${result.syncMode}`);
     process.stdout.write(result.diff);
     return;
   }
 
   output.success(`Synced ${result.skillCount} skill(s) → ${result.sync.adapter}`);
-  output.info(`Target file : ${result.sync.targetPath}`);
+  output.info(`Target path : ${result.sync.targetPath}`);
   output.info(`Sync mode   : ${result.syncMode}`);
   if (!result.changed) {
-    output.info("No changes to the target file.");
+    output.info("No changes to the target path.");
   }
 }
 
@@ -536,9 +554,14 @@ async function handleUi(flags: CliFlags, userConfig: UserConfig): Promise<void> 
 }
 
 async function handleStatus(flags: CliFlags, userConfig: UserConfig): Promise<void> {
-  const state = await getInstalledSkills(commonOptions(flags, userConfig));
+  const options = commonOptions(flags, userConfig);
+  const state = await getInstalledSkills(options);
   if (!state) {
-    output.warn("No local installation found. Run: skillex init");
+    output.warn(
+      resolveScope(flags) === "global"
+        ? "No global installation found. Run: skillex init --global --adapter <id>"
+        : "No local installation found. Run: skillex init",
+    );
     return;
   }
 
@@ -547,7 +570,13 @@ async function handleStatus(flags: CliFlags, userConfig: UserConfig): Promise<vo
     return;
   }
 
+  const statePaths = getScopedStatePaths(options.cwd ?? process.cwd(), {
+    scope: options.scope,
+    baseDir: options.agentSkillsDir,
+  });
   const installedEntries = Object.entries(state.installed || {});
+  output.info(`Scope        : ${resolveScope(flags)}`);
+  output.info(`State root   : ${statePaths.stateDir}`);
   output.info(`Sources      : ${state.sources.map((source) => `${source.repo}@${source.ref}`).join(", ")}`);
   output.info(`Active adapter: ${state.adapters.active || "(none)"}`);
   output.info(`Auto-sync    : ${state.settings.autoSync ? "enabled" : "disabled"}`);
@@ -576,7 +605,10 @@ async function handleStatus(flags: CliFlags, userConfig: UserConfig): Promise<vo
 async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const opts = commonOptions(flags, userConfig);
   const cwd = opts.cwd ?? process.cwd();
-  const statePaths = getStatePaths(cwd, opts.agentSkillsDir ?? DEFAULT_AGENT_SKILLS_DIR);
+  const statePaths = getScopedStatePaths(cwd, {
+    scope: opts.scope,
+    baseDir: opts.agentSkillsDir,
+  });
 
   interface DoctorCheck {
     name: string;
@@ -838,6 +870,7 @@ function resolveAlias(command: string | undefined): string | undefined {
 function commonOptions(flags: CliFlags, userConfig: UserConfig = {}): ProjectOptions {
   const options: ProjectOptions = {
     cwd: path.resolve(asOptionalString(flags.cwd) || process.cwd()),
+    scope: resolveScope(flags),
   };
 
   const repo = asOptionalString(flags.repo) ?? userConfig.defaultRepo;
@@ -870,20 +903,36 @@ function commonOptions(flags: CliFlags, userConfig: UserConfig = {}): ProjectOpt
   if (timeout !== undefined) options.timeout = timeout;
   if (noCache !== undefined) options.noCache = noCache;
 
-  // Default to user-level storage so symlinks always point to a stable path.
-  if (!options.agentSkillsDir) options.agentSkillsDir = getDefaultSkillsDir();
-
   return options;
 }
 
 /** Returns cache-related options to spread into a loadCatalog call. */
 function cacheOptions(opts: ProjectOptions): { cacheDir: string; noCache?: boolean } {
   const cwd = opts.cwd ?? process.cwd();
-  const stateDir = path.resolve(cwd, opts.agentSkillsDir ?? getDefaultSkillsDir());
+  const stateDir = getScopedStatePaths(cwd, {
+    scope: opts.scope ?? DEFAULT_INSTALL_SCOPE,
+    baseDir: opts.agentSkillsDir,
+  }).stateDir;
   return {
     cacheDir: path.join(stateDir, ".cache"),
     ...(opts.noCache !== undefined ? { noCache: opts.noCache } : {}),
   };
+}
+
+function resolveScope(flags: CliFlags): InstallScope {
+  const rawScope = asOptionalString(flags.scope);
+  const globalFlag = parseBooleanFlag(flags.global);
+
+  if (rawScope && rawScope !== "local" && rawScope !== "global") {
+    throw new CliError(`Invalid scope: ${rawScope}. Use "local" or "global".`, "INVALID_SCOPE");
+  }
+  if (rawScope === "local" && globalFlag === true) {
+    throw new CliError('Conflicting scope flags: use either "--scope local" or "--global".', "CONFLICTING_SCOPE");
+  }
+  if (globalFlag === true) {
+    return "global";
+  }
+  return (rawScope as InstallScope | undefined) || DEFAULT_INSTALL_SCOPE;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -956,6 +1005,8 @@ Global flags:
   --adapter <id>        Force adapter: ${listAdapters()
     .map((a) => a.id)
     .join(", ")}
+  --scope <scope>       local or global (default: local)
+  --global              Shortcut for --scope global
   --cwd <path>          Project directory (default: current)
   --verbose, -v         Enable debug output
   --json                Machine-readable JSON output

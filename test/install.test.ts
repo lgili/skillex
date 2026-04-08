@@ -167,6 +167,47 @@ test("install, update e remove manipulam o lockfile local", async (t: TestContex
   assert.equal(await pathExists(path.join(cwd, ".agent-skills", "skills", "git-master")), false);
 });
 
+test("escopos local e global mantem estados isolados", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-install-scope-"));
+  const globalStateDir = path.join(cwd, ".global-state");
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  await initProject({
+    cwd,
+    repo: "example/skills",
+    now: () => "2026-04-06T00:00:00.000Z",
+  });
+  await initProject({
+    cwd,
+    scope: "global",
+    agentSkillsDir: globalStateDir,
+    repo: "example/skills",
+    adapter: "codex",
+    now: () => "2026-04-06T00:01:00.000Z",
+  });
+
+  await installSkills(["git-master"], {
+    cwd,
+    scope: "global",
+    agentSkillsDir: globalStateDir,
+    catalogLoader: async () => createCatalog("1.0.0"),
+    downloader: fakeDownloader,
+    now: () => "2026-04-06T00:10:00.000Z",
+  });
+
+  const localState = await getInstalledSkills({ cwd });
+  const globalState = await getInstalledSkills({ cwd, scope: "global", agentSkillsDir: globalStateDir });
+
+  assert.ok(localState);
+  assert.ok(globalState);
+  assert.deepEqual(localState.installed, {});
+  assert.equal(globalState.installed["git-master"]!.version, "1.0.0");
+  assert.equal(await pathExists(path.join(globalStateDir, "skills", "git-master", "SKILL.md")), true);
+  assert.equal(path.isAbsolute(globalState.installed["git-master"]!.path), true);
+});
+
 test("source add, list e remove manipulam multiplos sources", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-sources-"));
   t.after(async () => {

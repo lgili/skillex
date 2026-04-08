@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import * as path from "node:path";
 import { pathExists } from "./fs.js";
 import type { AdapterConfig, AdapterState } from "./types.js";
@@ -12,8 +13,10 @@ const ADAPTERS: AdapterConfig[] = [
       { path: ".codex", weight: 12 },
       { path: ".codex/skills", weight: 16 },
     ],
-    syncTarget: ".codex/skills/skillex-skills.md",
-    syncMode: "managed-file",
+    syncTarget: ".codex/skills",
+    globalSyncTarget: path.join(os.homedir(), ".codex", "skills"),
+    legacySyncTargets: [".codex/skills/skillex-skills.md", ".codex/skills/askill-skills.md"],
+    syncMode: "managed-directory",
   },
   {
     id: "copilot",
@@ -53,10 +56,12 @@ const ADAPTERS: AdapterConfig[] = [
     markers: [
       { path: "CLAUDE.md", weight: 16 },
       { path: ".claude", weight: 18 },
+      { path: ".claude/skills", weight: 20 },
     ],
-    syncTarget: ".claude/skills/skillex-skills.md",
-    legacySyncTargets: ["CLAUDE.md"],
-    syncMode: "managed-file",
+    syncTarget: ".claude/skills",
+    globalSyncTarget: path.join(os.homedir(), ".claude", "skills"),
+    legacySyncTargets: [".claude/skills/skillex-skills.md", ".claude/skills/askill-skills.md"],
+    syncMode: "managed-directory",
   },
   {
     id: "gemini",
@@ -64,10 +69,12 @@ const ADAPTERS: AdapterConfig[] = [
     markers: [
       { path: "GEMINI.md", weight: 16 },
       { path: ".gemini", weight: 18 },
+      { path: ".gemini/skills", weight: 20 },
     ],
-    syncTarget: ".gemini/skills/skillex-skills.md",
-    legacySyncTargets: ["GEMINI.md"],
-    syncMode: "managed-file",
+    syncTarget: ".gemini/skills",
+    globalSyncTarget: path.join(os.homedir(), ".gemini", "skills"),
+    legacySyncTargets: [".gemini/skills/skillex-skills.md", ".gemini/skills/askill-skills.md"],
+    syncMode: "managed-directory",
   },
   {
     id: "windsurf",

@@ -5,12 +5,17 @@
 /**
  * Supported sync file rendering modes.
  */
-export type SyncMode = "managed-block" | "managed-file";
+export type SyncMode = "managed-block" | "managed-file" | "managed-directory";
 
 /**
  * Workspace sync write modes.
  */
 export type SyncWriteMode = "symlink" | "copy";
+
+/**
+ * Supported install scopes.
+ */
+export type InstallScope = "local" | "global";
 
 /**
  * Marker used to detect an adapter in a workspace.
@@ -27,7 +32,8 @@ export interface AdapterConfig {
   id: string;
   label: string;
   markers: AdapterMarker[];
-  syncTarget: string;
+  syncTarget?: string;
+  globalSyncTarget?: string;
   legacySyncTargets?: string[];
   syncMode: SyncMode;
 }
@@ -182,6 +188,7 @@ export interface SyncMetadata {
   adapter: string;
   targetPath: string;
   syncedAt: string;
+  skillIds?: string[] | undefined;
 }
 
 /**
@@ -221,6 +228,7 @@ export interface ResolvedSkillSelection {
  * Common filesystem paths used by the local state manager.
  */
 export interface StatePaths {
+  scope: InstallScope;
   stateDir: string;
   lockfilePath: string;
   skillsDirPath: string;
@@ -232,6 +240,7 @@ export interface StatePaths {
  */
 export interface ProjectOptions extends CatalogSourceInput {
   cwd?: string | undefined;
+  scope?: InstallScope | undefined;
   agentSkillsDir?: string | undefined;
   adapter?: string | undefined;
   autoSync?: boolean | undefined;
@@ -284,6 +293,19 @@ export interface PreparedSyncResult {
   diff: string;
   syncMode: SyncWriteMode;
   generatedSourcePath?: string | undefined;
+  directoryEntries?: PreparedDirectoryEntry[] | undefined;
+}
+
+/**
+ * Prepared directory entry for directory-native adapter sync.
+ */
+export interface PreparedDirectoryEntry {
+  skillId: string;
+  sourcePath: string;
+  absoluteTargetPath: string;
+  targetPath: string;
+  currentDescriptor: string;
+  nextDescriptor: string;
 }
 
 /**
@@ -312,9 +334,11 @@ export interface SyncResult {
  */
 export interface SyncOptions {
   cwd: string;
+  scope?: InstallScope | undefined;
   adapterId: string;
   statePaths: StatePaths;
   skills: InstalledSkillDocument[];
+  previousSkillIds?: string[] | undefined;
   mode?: SyncWriteMode | undefined;
   dryRun?: boolean | undefined;
   linkFactory?: ((targetPath: string, linkPath: string) => Promise<CreateSymlinkResult>) | undefined;

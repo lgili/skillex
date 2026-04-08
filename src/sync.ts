@@ -1,15 +1,26 @@
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { createSymlink, ensureDir, readJson, readSymlink, readText, removePath, writeText } from "./fs.js";
 import { getAdapter } from "./adapters.js";
+import {
+  copyPath,
+  createSymlink,
+  ensureDir,
+  pathExists,
+  readJson,
+  readSymlink,
+  readText,
+  removePath,
+  writeText,
+} from "./fs.js";
 import { normalizeSkillContent, parseSkillFrontmatter } from "./skill.js";
 import type {
-  CreateSymlinkResult,
+  AdapterConfig,
   InstalledSkillDocument,
   LockfileState,
+  PreparedDirectoryEntry,
   PreparedSyncResult,
   SyncOptions,
   SyncResult,
-  SyncWriteMode,
 } from "./types.js";
 import { SyncError } from "./types.js";
 
@@ -23,7 +34,7 @@ const LEGACY_AUTO_INJECT_BLOCKS = [
 ];
 
 /**
- * Loads installed skill documents from the local workspace state directory.
+ * Loads installed skill documents from the selected Skillex state directory.
  *
  * @param context - Workspace root and lockfile context.
  * @returns Installed skill documents used for sync rendering.
@@ -38,7 +49,7 @@ export async function loadInstalledSkillDocuments(context: {
 
   const documents: InstalledSkillDocument[] = [];
   for (const [skillId, metadata] of installedEntries) {
-    const skillDir = path.resolve(context.cwd, metadata.path);
+    const skillDir = resolveInstalledSkillPath(context.cwd, metadata.path);
     const manifest =
       (await readJson<{
         entry?: string;
@@ -66,7 +77,7 @@ export async function loadInstalledSkillDocuments(context: {
 }
 
 /**
- * Synchronizes installed skills into the target file consumed by an adapter.
+ * Synchronizes installed skills into the target consumed by an adapter.
  *
  * @param options - Sync execution options.
  * @returns Final sync result.
@@ -75,32 +86,60 @@ export async function loadInstalledSkillDocuments(context: {
 export async function syncAdapterFiles(options: SyncOptions): Promise<SyncResult> {
   try {
     const prepared = await prepareSyncAdapterFiles(options);
+
     if (!options.dryRun) {
-      await ensureDir(path.dirname(prepared.absoluteTargetPath));
-
-      if (prepared.generatedSourcePath) {
-        await ensureDir(path.dirname(prepared.generatedSourcePath));
-        await writeText(prepared.generatedSourcePath, prepared.nextContent);
-      }
-
-      if (prepared.syncMode === "symlink" && prepared.generatedSourcePath) {
+      if (prepared.directoryEntries) {
+        await ensureDir(prepared.absoluteTargetPath);
         const createLink = options.linkFactory || createSymlink;
-        const linkResult = await createLink(prepared.generatedSourcePath, prepared.absoluteTargetPath);
+        let finalMode = prepared.syncMode;
 
-        if (linkResult.fallback) {
-          (options.warn || console.error)(
-            `Aviso: symlink indisponivel para ${prepared.targetPath}; usando copia no lugar.`,
-          );
-          await writeText(prepared.absoluteTargetPath, prepared.nextContent);
-          await removePath(prepared.generatedSourcePath);
-          prepared.syncMode = "copy";
+        for (const entry of prepared.directoryEntries) {
+          if (prepared.syncMode === "symlink") {
+            const linkResult = await createLink(entry.sourcePath, entry.absoluteTargetPath);
+            if (linkResult.fallback) {
+              (options.warn || console.error)(
+                `Aviso: symlink indisponivel para ${entry.targetPath}; usando copia no lugar.`,
+              );
+              await copyPath(entry.sourcePath, entry.absoluteTargetPath);
+              finalMode = "copy";
+            }
+          } else {
+            await copyPath(entry.sourcePath, entry.absoluteTargetPath);
+          }
         }
-      } else {
-        await writeText(prepared.absoluteTargetPath, prepared.nextContent);
-      }
 
-      for (const cleanupPath of prepared.cleanupPaths) {
-        await removePath(cleanupPath);
+        for (const cleanupPath of prepared.cleanupPaths) {
+          await removePath(cleanupPath);
+        }
+
+        prepared.syncMode = finalMode;
+      } else {
+        await ensureDir(path.dirname(prepared.absoluteTargetPath));
+
+        if (prepared.generatedSourcePath) {
+          await ensureDir(path.dirname(prepared.generatedSourcePath));
+          await writeText(prepared.generatedSourcePath, prepared.nextContent);
+        }
+
+        if (prepared.syncMode === "symlink" && prepared.generatedSourcePath) {
+          const createLink = options.linkFactory || createSymlink;
+          const linkResult = await createLink(prepared.generatedSourcePath, prepared.absoluteTargetPath);
+
+          if (linkResult.fallback) {
+            (options.warn || console.error)(
+              `Aviso: symlink indisponivel para ${prepared.targetPath}; usando copia no lugar.`,
+            );
+            await writeText(prepared.absoluteTargetPath, prepared.nextContent);
+            await removePath(prepared.generatedSourcePath);
+            prepared.syncMode = "copy";
+          }
+        } else {
+          await writeText(prepared.absoluteTargetPath, prepared.nextContent);
+        }
+
+        for (const cleanupPath of prepared.cleanupPaths) {
+          await removePath(cleanupPath);
+        }
       }
     }
 
@@ -131,28 +170,49 @@ export async function prepareSyncAdapterFiles(
   options: Omit<SyncOptions, "dryRun">,
 ): Promise<PreparedSyncResult> {
   const adapter = getAdapter(options.adapterId);
-  const targetPath = path.join(options.cwd, adapter.syncTarget);
-  const relativeTargetPath = toPosix(path.relative(options.cwd, targetPath));
+  const absoluteTargetPath = resolveAdapterTargetPath(adapter, options);
+  const targetPath = toDisplayPath(options.cwd, absoluteTargetPath, options.statePaths.scope);
+  const cleanupPaths = await resolveCleanupPaths(adapter, options, absoluteTargetPath);
+
+  if (adapter.syncMode === "managed-directory") {
+    return prepareManagedDirectorySync({
+      adapter,
+      absoluteTargetPath,
+      targetPath,
+      cleanupPaths,
+      options,
+    });
+  }
+
+  if (options.statePaths.scope === "global") {
+    throw new SyncError(
+      `Adapter ${adapter.id} nao suporta sync global no momento. Use --scope local.`,
+      "GLOBAL_SYNC_UNSUPPORTED",
+    );
+  }
+
+  if (!adapter.syncTarget) {
+    throw new SyncError(`Adapter ${adapter.id} nao define um alvo de sync.`, "SYNC_TARGET_MISSING");
+  }
+
   const body = renderInstalledSkills(options.skills);
   const autoInjectBlock = buildAutoInjectBlock(options.skills);
-  const cleanupPaths = (adapter.legacySyncTargets || [])
-    .map((relativePath) => path.join(options.cwd, relativePath))
-    .filter((absolutePath) => absolutePath !== targetPath);
 
   if (adapter.syncMode === "managed-block") {
-    const existing = (await readText(targetPath, "")) || "";
+    const existing = (await readText(absoluteTargetPath, "")) || "";
     const nextManaged = upsertManagedBlock(existing, wrapManagedBlock(MANAGED_START, MANAGED_END, body));
     const nextContent = upsertAutoInjectBlock(nextManaged, autoInjectBlock);
 
     return {
       adapter: adapter.id,
-      absoluteTargetPath: targetPath,
-      targetPath: relativeTargetPath,
+      absoluteTargetPath,
+      targetPath,
       cleanupPaths,
-      changed: normalizeComparableText(existing) !== normalizeComparableText(nextContent),
+      changed:
+        normalizeComparableText(existing) !== normalizeComparableText(nextContent) || cleanupPaths.length > 0,
       currentContent: existing,
       nextContent,
-      diff: createTextDiff(existing, nextContent, relativeTargetPath),
+      diff: createTextDiff(existing, nextContent, targetPath),
       syncMode: "copy",
     };
   }
@@ -160,42 +220,44 @@ export async function prepareSyncAdapterFiles(
   const nextContent = buildManagedFileContent(adapter.id, body, autoInjectBlock);
   const requestedMode = options.mode || "symlink";
   if (requestedMode === "copy") {
-    const existing = (await readText(targetPath, "")) || "";
+    const existing = (await readText(absoluteTargetPath, "")) || "";
     return {
       adapter: adapter.id,
-      absoluteTargetPath: targetPath,
-      targetPath: relativeTargetPath,
+      absoluteTargetPath,
+      targetPath,
       cleanupPaths,
-      changed: normalizeComparableText(existing) !== normalizeComparableText(nextContent),
+      changed:
+        normalizeComparableText(existing) !== normalizeComparableText(nextContent) || cleanupPaths.length > 0,
       currentContent: existing,
       nextContent,
-      diff: createTextDiff(existing, nextContent, relativeTargetPath),
+      diff: createTextDiff(existing, nextContent, targetPath),
       syncMode: "copy",
     };
   }
 
   const generatedSourcePath = path.join(options.statePaths.generatedDirPath, adapter.id, path.basename(adapter.syncTarget));
-  const currentDescriptor = await describeTarget(targetPath);
-  const currentVisibleContent = (await readText(targetPath, "")) || "";
-  const nextDescriptor = `symlink -> ${toPosix(generatedSourcePath)}\n`;
+  const currentDescriptor = await describeTarget(absoluteTargetPath);
+  const currentVisibleContent = (await readText(absoluteTargetPath, "")) || "";
+  const nextDescriptor = `symlink -> ${toPosix(path.relative(path.dirname(absoluteTargetPath), generatedSourcePath))}\n`;
   const descriptorChanged = normalizeComparableText(currentDescriptor) !== normalizeComparableText(nextDescriptor);
   const contentChanged = normalizeComparableText(currentVisibleContent) !== normalizeComparableText(nextContent);
 
   return {
     adapter: adapter.id,
-    absoluteTargetPath: targetPath,
-    targetPath: relativeTargetPath,
+    absoluteTargetPath,
+    targetPath,
     cleanupPaths,
-    changed: descriptorChanged || contentChanged,
+    changed: descriptorChanged || contentChanged || cleanupPaths.length > 0,
     currentContent: currentDescriptor,
     nextContent,
     diff: createManagedFileDiff({
-      targetPath: relativeTargetPath,
+      targetPath,
       currentDescriptor,
       nextDescriptor,
-      generatedPath: toPosix(generatedSourcePath),
+      generatedPath: toDisplayPath(options.cwd, generatedSourcePath, options.statePaths.scope),
       currentContent: currentVisibleContent,
       nextContent,
+      cleanupPaths: cleanupPaths.map((cleanupPath) => toDisplayPath(options.cwd, cleanupPath, options.statePaths.scope)),
     }),
     syncMode: "symlink",
     generatedSourcePath,
@@ -252,6 +314,109 @@ export function buildAutoInjectBlock(skills: InstalledSkillDocument[]): string |
   return wrapManagedBlock(AUTO_INJECT_START, AUTO_INJECT_END, body);
 }
 
+async function prepareManagedDirectorySync(context: {
+  adapter: AdapterConfig;
+  absoluteTargetPath: string;
+  targetPath: string;
+  cleanupPaths: string[];
+  options: Omit<SyncOptions, "dryRun">;
+}): Promise<PreparedSyncResult> {
+  const requestedMode = context.options.mode || "symlink";
+  const directoryEntries = await Promise.all(
+    context.options.skills.map(async (skill): Promise<PreparedDirectoryEntry> => {
+      const absoluteSkillTargetPath = path.join(context.absoluteTargetPath, skill.id);
+      const targetPath = toDisplayPath(context.options.cwd, absoluteSkillTargetPath, context.options.statePaths.scope);
+      const currentDescriptor = await describeTarget(absoluteSkillTargetPath);
+      const nextDescriptor =
+        requestedMode === "symlink"
+          ? `symlink -> ${toPosix(path.relative(path.dirname(absoluteSkillTargetPath), skill.skillDir))}\n`
+          : "directory\n";
+
+      return {
+        skillId: skill.id,
+        sourcePath: skill.skillDir,
+        absoluteTargetPath: absoluteSkillTargetPath,
+        targetPath,
+        currentDescriptor,
+        nextDescriptor,
+      };
+    }),
+  );
+
+  const changed =
+    directoryEntries.some(
+      (entry) => normalizeComparableText(entry.currentDescriptor) !== normalizeComparableText(entry.nextDescriptor),
+    ) || context.cleanupPaths.length > 0;
+
+  return {
+    adapter: context.adapter.id,
+    absoluteTargetPath: context.absoluteTargetPath,
+    targetPath: context.targetPath,
+    cleanupPaths: context.cleanupPaths,
+    changed,
+    currentContent: "",
+    nextContent: "",
+    diff: createManagedDirectoryDiff({
+      targetPath: context.targetPath,
+      entries: directoryEntries,
+      cleanupPaths: context.cleanupPaths.map((cleanupPath) =>
+        toDisplayPath(context.options.cwd, cleanupPath, context.options.statePaths.scope),
+      ),
+    }),
+    syncMode: requestedMode,
+    directoryEntries,
+  };
+}
+
+async function resolveCleanupPaths(
+  adapter: AdapterConfig,
+  options: Omit<SyncOptions, "dryRun">,
+  absoluteTargetPath: string,
+): Promise<string[]> {
+  const cleanupPaths = new Set<string>();
+
+  for (const legacyTarget of adapter.legacySyncTargets || []) {
+    const resolvedLegacyPath =
+      options.statePaths.scope === "global"
+        ? path.join(absoluteTargetPath, path.basename(legacyTarget))
+        : path.resolve(options.cwd, legacyTarget);
+    if (await pathExists(resolvedLegacyPath)) {
+      cleanupPaths.add(resolvedLegacyPath);
+    }
+  }
+
+  if (adapter.syncMode === "managed-directory") {
+    const currentSkillIds = new Set(options.skills.map((skill) => skill.id));
+    for (const previousSkillId of options.previousSkillIds || []) {
+      if (!currentSkillIds.has(previousSkillId)) {
+        const stalePath = path.join(absoluteTargetPath, previousSkillId);
+        if (await pathExists(stalePath)) {
+          cleanupPaths.add(stalePath);
+        }
+      }
+    }
+  }
+
+  return [...cleanupPaths];
+}
+
+function resolveAdapterTargetPath(adapter: AdapterConfig, options: Omit<SyncOptions, "dryRun">): string {
+  if (options.statePaths.scope === "global") {
+    if (!adapter.globalSyncTarget) {
+      throw new SyncError(
+        `Adapter ${adapter.id} nao suporta sync global no momento. Use --scope local.`,
+        "GLOBAL_SYNC_UNSUPPORTED",
+      );
+    }
+    return path.resolve(adapter.globalSyncTarget);
+  }
+
+  if (!adapter.syncTarget) {
+    throw new SyncError(`Adapter ${adapter.id} nao define um alvo de sync.`, "SYNC_TARGET_MISSING");
+  }
+  return path.join(options.cwd, adapter.syncTarget);
+}
+
 function renderSkillSection(skill: InstalledSkillDocument): string {
   const body = skill.body.trim() || "_Sem conteudo._";
   return [`### ${skill.name} (\`${skill.id}@${skill.version}\`)`, "", body].join("\n");
@@ -285,9 +450,6 @@ function buildManagedFileContent(adapterId: string, body: string, autoInjectBloc
         "",
       ].join("\n");
     case "cline":
-    case "codex":
-    case "claude":
-    case "gemini":
       return `${sections.join("\n\n")}\n`;
     default:
       throw new SyncError(`Adapter desconhecido: ${adapterId}`, "SYNC_ADAPTER_UNKNOWN");
@@ -344,11 +506,46 @@ async function describeTarget(targetPath: string): Promise<string> {
     return `symlink -> ${toPosix(linkTarget)}\n`;
   }
 
-  if (!(await readText(targetPath, null))) {
-    return "";
+  try {
+    const stats = await fs.lstat(targetPath);
+    if (stats.isDirectory()) {
+      return "directory\n";
+    }
+    if (stats.isFile()) {
+      return "file\n";
+    }
+    return "path\n";
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return "";
+    }
+    throw error;
+  }
+}
+
+function createManagedDirectoryDiff(context: {
+  targetPath: string;
+  entries: PreparedDirectoryEntry[];
+  cleanupPaths: string[];
+}): string {
+  const parts: string[] = [];
+
+  for (const entry of context.entries) {
+    if (normalizeComparableText(entry.currentDescriptor) === normalizeComparableText(entry.nextDescriptor)) {
+      continue;
+    }
+    parts.push(createTextDiff(entry.currentDescriptor, entry.nextDescriptor, entry.targetPath).trimEnd());
   }
 
-  return "file\n";
+  for (const cleanupPath of context.cleanupPaths) {
+    parts.push(`- remove ${cleanupPath}`);
+  }
+
+  if (parts.length === 0) {
+    return `Sem alteracoes em ${context.targetPath}.\n`;
+  }
+
+  return `${parts.join("\n")}\n`;
 }
 
 function createManagedFileDiff(context: {
@@ -358,13 +555,14 @@ function createManagedFileDiff(context: {
   generatedPath: string;
   currentContent: string;
   nextContent: string;
+  cleanupPaths: string[];
 }): string {
   const descriptorChanged =
     normalizeComparableText(context.currentDescriptor) !== normalizeComparableText(context.nextDescriptor);
   const contentChanged =
     normalizeComparableText(context.currentContent) !== normalizeComparableText(context.nextContent);
 
-  if (!descriptorChanged && !contentChanged) {
+  if (!descriptorChanged && !contentChanged && context.cleanupPaths.length === 0) {
     return `Sem alteracoes em ${context.targetPath}.\n`;
   }
 
@@ -374,6 +572,9 @@ function createManagedFileDiff(context: {
   }
   if (contentChanged) {
     parts.push(createTextDiff(context.currentContent, context.nextContent, context.generatedPath).trimEnd());
+  }
+  for (const cleanupPath of context.cleanupPaths) {
+    parts.push(`- remove ${cleanupPath}`);
   }
 
   return `${parts.join("\n")}\n`;
@@ -471,6 +672,14 @@ function diffLines(leftLines: string[], rightLines: string[]): Array<{ type: str
   }
 
   return operations;
+}
+
+function resolveInstalledSkillPath(cwd: string, skillPath: string): string {
+  return path.isAbsolute(skillPath) ? skillPath : path.resolve(cwd, skillPath);
+}
+
+function toDisplayPath(cwd: string, targetPath: string, scope: "local" | "global"): string {
+  return scope === "local" ? toPosix(path.relative(cwd, targetPath)) : toPosix(targetPath);
 }
 
 function escapeRegExp(value: string): string {

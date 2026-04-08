@@ -4,7 +4,7 @@ import path from "node:path";
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 
-import { detectAdapters, resolveAdapterState } from "../src/adapters.js";
+import { detectAdapters, getAdapter, resolveAdapterState } from "../src/adapters.js";
 import { initProject } from "../src/install.js";
 
 test("detectAdapters encontra adapters por marcadores do workspace", async (t: TestContext) => {
@@ -46,6 +46,13 @@ test("resolveAdapterState respeita override explicito", async (t: TestContext) =
 
   assert.equal(adapterState.active, "claude");
   assert.deepEqual(adapterState.detected, ["codex"]);
+});
+
+test("getAdapter expõe codex como adapter directory-native com target global", () => {
+  const adapter = getAdapter("codex");
+  assert.equal(adapter.syncMode, "managed-directory");
+  assert.equal(adapter.syncTarget, ".codex/skills");
+  assert.ok(adapter.globalSyncTarget);
 });
 
 test("initProject persiste adapter ativo e detectados", async (t: TestContext) => {
