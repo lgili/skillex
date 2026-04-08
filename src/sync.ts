@@ -177,7 +177,7 @@ export async function prepareSyncAdapterFiles(
   const generatedSourcePath = path.join(options.statePaths.generatedDirPath, adapter.id, path.basename(adapter.syncTarget));
   const currentDescriptor = await describeTarget(targetPath);
   const currentVisibleContent = (await readText(targetPath, "")) || "";
-  const nextDescriptor = `symlink -> ${toPosix(path.relative(path.dirname(targetPath), generatedSourcePath))}\n`;
+  const nextDescriptor = `symlink -> ${toPosix(generatedSourcePath)}\n`;
   const descriptorChanged = normalizeComparableText(currentDescriptor) !== normalizeComparableText(nextDescriptor);
   const contentChanged = normalizeComparableText(currentVisibleContent) !== normalizeComparableText(nextContent);
 
@@ -193,7 +193,7 @@ export async function prepareSyncAdapterFiles(
       targetPath: relativeTargetPath,
       currentDescriptor,
       nextDescriptor,
-      generatedPath: toPosix(path.relative(options.cwd, generatedSourcePath)),
+      generatedPath: toPosix(generatedSourcePath),
       currentContent: currentVisibleContent,
       nextContent,
     }),

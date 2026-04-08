@@ -1,7 +1,15 @@
+import * as os from "node:os";
 import * as path from "node:path";
 import type { StatePaths } from "./types.js";
 
 export const DEFAULT_AGENT_SKILLS_DIR = ".agent-skills";
+
+/**
+ * Returns the default user-level Skillex directory (`~/.skillex`).
+ */
+export function getDefaultSkillsDir(): string {
+  return path.join(os.homedir(), ".skillex");
+}
 export const DEFAULT_LOCKFILE = "skills.json";
 export const DEFAULT_LOCAL_SKILLS_DIR = "skills";
 export const DEFAULT_GENERATED_DIR = "generated";

@@ -6,7 +6,7 @@ import {
   readCatalogCache,
   searchCatalogSkills,
 } from "./catalog.js";
-import { DEFAULT_AGENT_SKILLS_DIR, getStatePaths } from "./config.js";
+import { DEFAULT_AGENT_SKILLS_DIR, getDefaultSkillsDir, getStatePaths } from "./config.js";
 import {
   addProjectSource,
   getInstalledSkills,
@@ -870,13 +870,16 @@ function commonOptions(flags: CliFlags, userConfig: UserConfig = {}): ProjectOpt
   if (timeout !== undefined) options.timeout = timeout;
   if (noCache !== undefined) options.noCache = noCache;
 
+  // Default to user-level storage so symlinks always point to a stable path.
+  if (!options.agentSkillsDir) options.agentSkillsDir = getDefaultSkillsDir();
+
   return options;
 }
 
 /** Returns cache-related options to spread into a loadCatalog call. */
 function cacheOptions(opts: ProjectOptions): { cacheDir: string; noCache?: boolean } {
   const cwd = opts.cwd ?? process.cwd();
-  const stateDir = path.join(cwd, opts.agentSkillsDir ?? DEFAULT_AGENT_SKILLS_DIR);
+  const stateDir = path.resolve(cwd, opts.agentSkillsDir ?? getDefaultSkillsDir());
   return {
     cacheDir: path.join(stateDir, ".cache"),
     ...(opts.noCache !== undefined ? { noCache: opts.noCache } : {}),

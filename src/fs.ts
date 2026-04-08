@@ -103,16 +103,16 @@ export async function removePath(targetPath: string): Promise<void> {
  * @returns Symlink creation result.
  */
 export async function createSymlink(targetPath: string, linkPath: string): Promise<CreateSymlinkResult> {
-  const relativeTarget = path.relative(path.dirname(linkPath), targetPath) || ".";
+  const absoluteTarget = path.resolve(targetPath);
   await ensureDir(path.dirname(linkPath));
   await removePath(linkPath);
 
   try {
-    await fs.symlink(relativeTarget, linkPath);
+    await fs.symlink(absoluteTarget, linkPath);
     return {
       ok: true,
       fallback: false,
-      relativeTarget,
+      relativeTarget: absoluteTarget,
     };
   } catch (error) {
     if (
@@ -124,7 +124,7 @@ export async function createSymlink(targetPath: string, linkPath: string): Promi
       return {
         ok: false,
         fallback: true,
-        relativeTarget,
+        relativeTarget: absoluteTarget,
       };
     }
     throw error;
