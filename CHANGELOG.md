@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-04-08
+
+### Fixed
+- `skillex list` and all catalog commands no longer fail with `owner/repo` when a lockfile was written by an older version that used the placeholder default source — the placeholder is now silently replaced by `lgili/skillex`
+
 ## [0.2.2] - 2026-04-08
 
 ### Added

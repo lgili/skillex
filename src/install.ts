@@ -847,11 +847,15 @@ function normalizeLockfile(existing: LockfileState | null, source: CatalogSource
   };
 }
 
+/** Repos that are known placeholder values written by older versions and must be ignored. */
+const PLACEHOLDER_REPOS = new Set(["owner/repo"]);
+
 function getLockfileSources(existing: LockfileState | null, fallbackSource: CatalogSource): LockfileSource[] {
   const legacyCatalog = getLegacyCatalog(existing);
   const configuredSources = Array.isArray(existing?.sources)
     ? existing.sources
         .filter((entry): entry is LockfileSource => Boolean(entry?.repo))
+        .filter((entry) => !PLACEHOLDER_REPOS.has(entry.repo))
         .map((entry) => ({
           repo: entry.repo,
           ref: entry.ref || DEFAULT_REF,
@@ -863,7 +867,7 @@ function getLockfileSources(existing: LockfileState | null, fallbackSource: Cata
     return dedupeSources(configuredSources);
   }
 
-  if (legacyCatalog?.repo) {
+  if (legacyCatalog?.repo && !PLACEHOLDER_REPOS.has(legacyCatalog.repo)) {
     return dedupeSources([
       {
         repo: legacyCatalog.repo,

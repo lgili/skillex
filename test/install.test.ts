@@ -86,6 +86,32 @@ test("initProject usa o catalogo official por padrao", async (t: TestContext) =>
   assert.equal(result.lockfile.sources[0]?.ref, "main");
 });
 
+test("lockfile com placeholder owner/repo cai de volta para o source padrao", async (t: TestContext) => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-placeholder-source-"));
+  t.after(async () => {
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  // Simulate a lockfile written by an old version with the placeholder repo
+  await ensureDir(path.join(cwd, ".agent-skills"));
+  await writeJson(path.join(cwd, ".agent-skills", "skills.json"), {
+    formatVersion: 1,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    sources: [{ repo: "owner/repo", ref: "main" }],
+    adapters: { active: null, detected: [] },
+    settings: { autoSync: false },
+    sync: null,
+    syncMode: null,
+    installed: {},
+  });
+
+  const sources = await listProjectSources({ cwd });
+  // placeholder must be stripped; falls back to the real default
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]?.repo, "lgili/skillex");
+});
+
 test("getInstalledSkills migra lockfile legado com catalog unico", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-legacy-lockfile-"));
   t.after(async () => {
