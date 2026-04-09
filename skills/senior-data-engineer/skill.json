@@ -1,0 +1,45 @@
+{
+  "id": "senior-data-engineer",
+  "name": "Senior Data Engineer",
+  "version": "1.0.0",
+  "description": "Senior data engineering specialist for designing, implementing, and operating production data pipelines, data models, SQL-optimized queries, dbt projects, and workflow orchestration. Use when working with ETL/ELT pipelines, data warehousing (Snowflake, BigQuery, Redshift, Databricks), dbt models, Airflow DAGs, PySpark jobs, data quality validation, or data schema design. Activates when you say 'data pipeline', 'ETL', 'ELT', 'dbt model', 'data warehouse', 'orchestrate data', 'data quality', 'Airflow DAG', 'PySpark job', or 'data schema'.",
+  "author": "lgili",
+  "tags": [
+    "data-engineering",
+    "sql",
+    "dbt",
+    "etl",
+    "elt",
+    "spark",
+    "pyspark",
+    "airflow",
+    "data-modeling",
+    "data-warehouse",
+    "pipeline",
+    "bigquery",
+    "snowflake",
+    "data-quality"
+  ],
+  "compatibility": [
+    "codex",
+    "copilot",
+    "cline",
+    "cursor",
+    "claude",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/pipeline-patterns.md",
+    "references/sql-optimization.md",
+    "references/data-modeling.md",
+    "scripts/profile_dataset.py",
+    "scripts/audit_sql_query.py"
+  ],
+  "scripts": {
+    "profile": "python skills/senior-data-engineer/scripts/profile_dataset.py",
+    "audit-sql": "python skills/senior-data-engineer/scripts/audit_sql_query.py"
+  }
+}

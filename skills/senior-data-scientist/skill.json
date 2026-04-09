@@ -1,0 +1,44 @@
+{
+  "id": "senior-data-scientist",
+  "name": "Senior Data Scientist",
+  "version": "1.0.0",
+  "description": "Senior data science specialist for machine learning model development, feature engineering, statistical analysis, A/B experiment design, model evaluation, explainability, and communicating results to stakeholders. Use when building ML models, exploring datasets, designing statistical experiments, performing hypothesis tests, or auditing model quality. Activates when you say 'build a model', 'feature engineering', 'train ML', 'A/B test', 'statistical test', 'evaluate model', 'data science', 'scikit-learn', 'machine learning pipeline', or 'model performance'.",
+  "author": "lgili",
+  "tags": [
+    "data-science",
+    "machine-learning",
+    "ml",
+    "statistics",
+    "feature-engineering",
+    "model-evaluation",
+    "a-b-testing",
+    "scikit-learn",
+    "pandas",
+    "experiment",
+    "hypothesis-testing",
+    "mlops",
+    "explainability"
+  ],
+  "compatibility": [
+    "codex",
+    "copilot",
+    "cline",
+    "cursor",
+    "claude",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/ml-workflow.md",
+    "references/feature-engineering.md",
+    "references/experiment-design.md",
+    "scripts/profile_features.py",
+    "scripts/audit_ml_code.py"
+  ],
+  "scripts": {
+    "profile": "python skills/senior-data-scientist/scripts/profile_features.py",
+    "audit": "python skills/senior-data-scientist/scripts/audit_ml_code.py"
+  }
+}
