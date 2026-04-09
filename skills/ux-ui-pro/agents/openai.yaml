@@ -1,0 +1,7 @@
+interface:
+  display_name: "UX/UI Pro"
+  short_description: "Expert UI/UX designer specializing in modern, user-friendly f..."
+  default_prompt: "Use $ux-ui-pro to help me with this task."
+
+policy:
+  allow_implicit_invocation: true

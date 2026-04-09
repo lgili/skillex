@@ -1,0 +1,35 @@
+{
+  "id": "ux-ui-pro",
+  "name": "UX/UI Pro",
+  "version": "0.1.0",
+  "description": "Expert UI/UX designer specializing in modern, user-friendly frontend and app interfaces. Activates when you say 'design a UI', 'improve UX', 'review my interface', 'make this more user-friendly', 'design a component', 'create a design system', 'improve accessibility', or 'redesign this layout'.",
+  "author": "lgili",
+  "tags": [
+    "ui",
+    "ux",
+    "design",
+    "frontend",
+    "accessibility",
+    "design-system"
+  ],
+  "compatibility": [
+    "codex",
+    "copilot",
+    "cline",
+    "cursor",
+    "claude",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/design-principles.md",
+    "references/typography-color.md",
+    "references/component-patterns.md",
+    "references/accessibility.md",
+    "references/design-system.md",
+    "references/mobile-responsive.md"
+  ]
+}
