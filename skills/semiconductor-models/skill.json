@@ -1,0 +1,33 @@
+{
+  "id": "semiconductor-models",
+  "name": "Semiconductor Models",
+  "version": "1.0.0",
+  "description": "Specialist for reviewing, improving, and correctly using existing MOSFET, IGBT, and diode models in a C++ power electronics simulator. Covers device physics, switching behavior, parameter extraction, and model validation against datasheet and measurement data.",
+  "author": "lgili",
+  "tags": [
+    "mosfet",
+    "igbt",
+    "diode",
+    "semiconductor",
+    "switching",
+    "device-model",
+    "simulation",
+    "cpp"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/mosfet-igbt-models.md",
+    "references/diode-models.md",
+    "references/model-review-guide.md"
+  ]
+}

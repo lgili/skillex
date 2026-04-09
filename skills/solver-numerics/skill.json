@@ -1,0 +1,35 @@
+{
+  "id": "solver-numerics",
+  "name": "Solver Numerics",
+  "version": "1.0.0",
+  "description": "Numerical methods specialist for discrete-time power electronics simulation. Covers numerical integration (trapezoidal, backward Euler, GEAR/BDF), Newton-Raphson iteration for nonlinear circuits, convergence control, local truncation error, step size selection, and sparse linear algebra with Eigen.",
+  "author": "lgili",
+  "tags": [
+    "numerical",
+    "integration",
+    "newton-raphson",
+    "convergence",
+    "trapezoidal",
+    "gear",
+    "bdf",
+    "sparse",
+    "eigen",
+    "simulation"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/numerical-integration.md",
+    "references/newton-raphson.md",
+    "references/sparse-linear-solvers.md"
+  ]
+}

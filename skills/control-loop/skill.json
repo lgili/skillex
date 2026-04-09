@@ -1,0 +1,39 @@
+{
+  "id": "control-loop",
+  "name": "Control Loop",
+  "version": "1.0.0",
+  "description": "Digital control specialist for discrete-time power electronics simulators. Covers Z-domain design, ZOH discretization, PID and type-II/III compensators, computational delay, anti-windup, and digital PWM generation. Designed for C++ simulation of digitally controlled converters.",
+  "author": "lgili",
+  "tags": [
+    "control",
+    "digital-control",
+    "z-domain",
+    "zoh",
+    "pid",
+    "compensator",
+    "discrete-time",
+    "pwm",
+    "simulation",
+    "cpp"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/digital-control.md",
+    "references/pid-and-compensators.md",
+    "references/average-state-space.md",
+    "scripts/run_stability_analysis.py"
+  ],
+  "scripts": {
+    "stability": "python skills/control-loop/scripts/run_stability_analysis.py"
+  }
+}

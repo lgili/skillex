@@ -30,5 +30,9 @@
     "references/advanced-patterns.md",
     "scripts/bootstrap_ts_project.js",
     "scripts/run_quality_gates.js"
-  ]
+  ],
+  "scripts": {
+    "bootstrap": "node scripts/bootstrap_ts_project.js",
+    "quality": "node scripts/run_quality_gates.js"
+  }
 }

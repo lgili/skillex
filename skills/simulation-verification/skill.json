@@ -1,0 +1,38 @@
+{
+  "id": "simulation-verification",
+  "name": "Simulation Verification",
+  "version": "1.0.0",
+  "description": "Verification and validation specialist for power electronics simulators. Covers benchmark circuit design, comparison against PSIM/SPICE references, numerical accuracy analysis, Monte Carlo parameter sweeps, and regression test infrastructure for the C++ simulation engine.",
+  "author": "lgili",
+  "tags": [
+    "verification",
+    "validation",
+    "benchmark",
+    "monte-carlo",
+    "regression",
+    "psim",
+    "spice",
+    "accuracy",
+    "simulation"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/test-case-design.md",
+    "references/cross-validation.md",
+    "references/numerical-benchmarks.md",
+    "scripts/verify_simulation.py"
+  ],
+  "scripts": {
+    "verify": "python skills/simulation-verification/scripts/verify_simulation.py"
+  }
+}

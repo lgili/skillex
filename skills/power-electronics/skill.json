@@ -1,0 +1,33 @@
+{
+  "id": "power-electronics",
+  "name": "Power Electronics",
+  "version": "1.0.0",
+  "description": "Power electronics specialist for DC/DC and DC/AC converter topologies, CCM/DCM operation, state-space averaging, small-signal models, and loss analysis. Designed for discrete-time power electronics simulators written in C++.",
+  "author": "lgili",
+  "tags": [
+    "power-electronics",
+    "converter",
+    "dc-dc",
+    "dc-ac",
+    "ccm",
+    "dcm",
+    "small-signal",
+    "simulation"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/converter-topologies.md",
+    "references/ccm-dcm-analysis.md",
+    "references/small-signal-models.md"
+  ]
+}

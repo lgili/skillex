@@ -1,0 +1,33 @@
+{
+  "id": "magnetic-components",
+  "name": "Magnetic Components",
+  "version": "1.0.0",
+  "description": "Specialist for non-ideal magnetic component modeling: transformers, coupled inductors, saturation, B-H curves, and core loss estimation. Covers equivalent circuit derivation and C++ simulator stamps for accurate magnetic simulation.",
+  "author": "lgili",
+  "tags": [
+    "magnetics",
+    "transformer",
+    "inductor",
+    "saturation",
+    "core-loss",
+    "b-h-curve",
+    "coupled-inductor",
+    "simulation"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/transformer-models.md",
+    "references/core-saturation.md",
+    "references/coupled-inductor-stamps.md"
+  ]
+}

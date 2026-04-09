@@ -1,0 +1,38 @@
+{
+  "id": "waveform-analysis",
+  "name": "Waveform Analysis",
+  "version": "1.0.0",
+  "description": "Waveform analysis specialist for power electronics simulators. Covers FFT-based harmonic analysis, THD computation, steady-state detection, RMS/average/peak extraction, power quality metrics, and spectral leakage mitigation for switching waveforms.",
+  "author": "lgili",
+  "tags": [
+    "waveform",
+    "fft",
+    "thd",
+    "harmonic",
+    "rms",
+    "steady-state",
+    "spectral",
+    "power-quality",
+    "simulation"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/spectral-analysis.md",
+    "references/steady-state-detection.md",
+    "references/power-quality-metrics.md",
+    "scripts/analyze_waveform.py"
+  ],
+  "scripts": {
+    "analyze": "python skills/waveform-analysis/scripts/analyze_waveform.py"
+  }
+}

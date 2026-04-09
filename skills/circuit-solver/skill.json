@@ -1,0 +1,33 @@
+{
+  "id": "circuit-solver",
+  "name": "Circuit Solver",
+  "version": "1.0.0",
+  "description": "Modified Nodal Analysis (MNA) specialist for power electronics simulators. Covers netlist-to-matrix formulation, component stamps (R, L, C, V/I sources, switches, controlled sources), sparse matrix assembly, and node numbering strategies.",
+  "author": "lgili",
+  "tags": [
+    "mna",
+    "circuit-solver",
+    "nodal-analysis",
+    "matrix",
+    "stamps",
+    "sparse",
+    "simulation",
+    "cpp"
+  ],
+  "compatibility": [
+    "claude",
+    "cursor",
+    "copilot",
+    "cline",
+    "codex",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "references/mna-formulation.md",
+    "references/component-stamps.md",
+    "references/matrix-assembly.md"
+  ]
+}
