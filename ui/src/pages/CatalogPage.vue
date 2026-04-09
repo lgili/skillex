@@ -7,21 +7,27 @@ const store = useSkillexStore();
 const selectedCategory = ref("all");
 
 const CATEGORIES = [
-  { id: "all",      name: "Todas",      icon: "✦" },
-  { id: "workflow", name: "Workflow",   icon: "🌿" },
-  { id: "testing",  name: "Testing",    icon: "🧪" },
-  { id: "security", name: "Security",   icon: "🛡️" },
-  { id: "devops",   name: "DevOps",     icon: "🐳" },
-  { id: "tools",    name: "Tools",      icon: "🔧" },
+  { id: "all",         name: "Todas",       icon: "✦" },
+  { id: "code",        name: "Code",        icon: "💻" },
+  { id: "engineering", name: "Engineering", icon: "⚡" },
+  { id: "workflow",    name: "Workflow",    icon: "🌿" },
+  { id: "testing",     name: "Testing",     icon: "🧪" },
+  { id: "security",    name: "Security",    icon: "🛡️" },
+  { id: "devops",      name: "DevOps",      icon: "🐳" },
+  { id: "tools",       name: "Tools",       icon: "🔧" },
 ];
 
 function inferCategory(id: string, tags: string[]): string {
   const all = [id, ...tags].map(s => s.toLowerCase()).join(" ");
+  // Engineering: power electronics, circuits, numerical solvers, waveform analysis
+  if (/simulation|mna|z-domain|magnetics|mosfet|igbt|waveform|fft|thd|newton-raphson|psim/.test(all)) return "engineering";
+  // Code: programming languages and code-quality skills
+  if (/typescript|python|cpp-pro|c-pro|code-review|error-handling/.test(all)) return "code";
   if (/git|commit|workflow|branch/.test(all)) return "workflow";
   if (/test|jest|tdd|vitest|spec/.test(all))  return "testing";
   if (/security|owasp|audit|guard/.test(all)) return "security";
   if (/docker|devops|ci|cd|helm/.test(all))   return "devops";
-  if (/python|scraper|tool|docs|web/.test(all)) return "tools";
+  if (/scraper|tool|docs|web/.test(all))       return "tools";
   return "other";
 }
 
