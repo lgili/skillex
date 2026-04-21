@@ -1,0 +1,37 @@
+{
+  "id": "token-saver",
+  "name": "Token Saver",
+  "version": "1.0.0",
+  "description": "Compact, professional response compression plus agent-memory trimming, terse commits, and one-line review output to save tokens without losing technical accuracy.",
+  "author": "lgili",
+  "tags": [
+    "productivity",
+    "prompting",
+    "memory-files",
+    "compression",
+    "tokens"
+  ],
+  "compatibility": [
+    "codex",
+    "copilot",
+    "cline",
+    "cursor",
+    "claude",
+    "gemini",
+    "windsurf"
+  ],
+  "entry": "SKILL.md",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/response-compression.md",
+    "references/memory-file-strategy.md",
+    "references/terse-commit-and-review.md",
+    "scripts/token_report.js",
+    "scripts/scaffold_compact_memory.js"
+  ],
+  "scripts": {
+    "report": "node scripts/token_report.js",
+    "scaffold-memory": "node scripts/scaffold_compact_memory.js"
+  }
+}

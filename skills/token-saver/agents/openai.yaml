@@ -1,0 +1,7 @@
+interface:
+  display_name: "Token Saver"
+  short_description: "Save output and memory tokens with concise technical replies, compact rules files, terse commits, and one-line reviews"
+  default_prompt: "Apply Token Saver to make this output smaller without losing technical accuracy, and prefer compact structures over verbose prose."
+
+policy:
+  allow_implicit_invocation: true
