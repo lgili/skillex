@@ -27,10 +27,12 @@
     "references/response-compression.md",
     "references/memory-file-strategy.md",
     "references/terse-commit-and-review.md",
+    "scripts/emit_activation_snippet.js",
     "scripts/token_report.js",
     "scripts/scaffold_compact_memory.js"
   ],
   "scripts": {
+    "activation-snippet": "node scripts/emit_activation_snippet.js",
     "report": "node scripts/token_report.js",
     "scaffold-memory": "node scripts/scaffold_compact_memory.js"
   }

@@ -1,83 +1,113 @@
 ---
 name: token-saver
-description: Response compression and agent-memory trimming specialist for saving tokens without losing technical accuracy. Use when asked to be more concise, reduce verbosity, save tokens, compress AGENTS.md or CLAUDE.md style files, write terse commit messages, or produce one-line review comments. Trigger for asks like "save tokens", "be terse", "less verbose", "compress this memory file", "rewrite AGENTS.md shorter", "short commit message", or "one-line review".
+description: Save output and always-on context tokens without losing technical accuracy. Use when asked to be terse, less verbose, shorter, token-efficient, to compress AGENTS.md or CLAUDE.md style files, to write short commits, or to give one-line review comments. Trigger for asks like "save tokens", "be terse", "less verbose", "compress this memory file", "rewrite AGENTS.md shorter", "short commit message", or "one-line review".
 ---
 
 # Token Saver
 
 ## Overview
 
-Use this skill when the goal is to reduce token usage across replies, persistent agent memory
-files, commit messages, and code review comments without dropping technical correctness.
+Use this skill to cut token use in four places:
 
-This skill is inspired by the command patterns used in the `caveman` project, but translated
-into a more professional, engineering-focused style: compact, direct, exact, and still readable.
+- normal replies
+- always-on memory/rules files
+- commit messages
+- code review comments
+
+Model should talk smaller, not think smaller. Keep technical substance exact.
+
+## Compression Levels
+
+| Level | Use when | Behavior |
+|---|---|---|
+| `lite` | User wants concise but still polished output | Keep grammar. Remove filler and throat-clearing. |
+| `full` | Default | Short clauses, fragments OK, answer first, no fluff. |
+| `ultra` | User wants maximum compression | Telegraphic. Keep only technical nouns, action, reason, next step. |
 
 ## Core Workflow
 
-1. **Choose the compression target** — Decide whether the user needs a terse reply, a compact memory file, a short commit message, or one-line review comments.
-2. **Preserve technical signal** — Keep commands, code, file paths, version numbers, equations, API names, and error strings exact. Remove filler before removing content.
-3. **Compress structure before meaning** — Lead with the conclusion, prefer bullets or short blocks over prose, and collapse repeated caveats or obvious restatements.
-4. **Use specialist micro-formats** — For commits, use tight Conventional Commits. For reviews, give one line per finding with line or location context. For memory files, keep only durable instructions and defaults.
-5. **Audit persistent token cost** — Use `scripts/token_report.js` to find heavy memory and rules files that are good compression targets.
-6. **Generate compact scaffolds when needed** — Use `scripts/scaffold_compact_memory.js` to create lean `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, or rule files that stay small from the start.
+1. **Pick target** — reply, memory file, commit, or review.
+2. **Preserve exact anchors** — code, commands, paths, URLs, API names, equations, versions, config keys.
+3. **Compress structure first** — answer first, bullets over prose, no repeated caveats, no pleasantries.
+4. **Use micro-format** — terse answer, terse commit, one-line review, or compact memory file.
+5. **Audit or scaffold when useful** — use the scripts below instead of rewriting boilerplate manually.
+
+## Always-On Snippet
+
+Use this when the user wants the style active every session. Generate a ready-to-paste variant with `scripts/emit_activation_snippet.js`.
+
+```text
+Terse by default. Technical substance exact.
+Drop filler, pleasantries, hedging, and repeated restatements.
+Lead with answer. Short clauses or fragments OK.
+Keep code, commands, paths, URLs, and identifiers exact.
+Format: [thing] [action] [reason]. [next step].
+```
 
 ## Reference Guide
 
 | Topic | Reference | When to load |
 |---|---|---|
-| Response compression patterns | `references/response-compression.md` | When making answers shorter while keeping substance |
-| Memory and rules files | `references/memory-file-strategy.md` | When rewriting `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, or agent rule files |
-| Terse commits and reviews | `references/terse-commit-and-review.md` | When writing short commit messages or compact code review comments |
+| Response compression | `references/response-compression.md` | Shortening answers without losing meaning |
+| Memory and rules files | `references/memory-file-strategy.md` | Rewriting `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, or agent rules |
+| Terse commits and reviews | `references/terse-commit-and-review.md` | Writing short commits or one-line review comments |
 
 ## Bundled Scripts
 
 | Script | Purpose | Usage |
 |---|---|---|
-| `scripts/token_report.js` | Scan common agent memory/rules files and estimate their token weight | `node skills/token-saver/scripts/token_report.js --root . --json` |
-| `scripts/scaffold_compact_memory.js` | Generate a compact memory/rules file scaffold for a specific agent | `node skills/token-saver/scripts/scaffold_compact_memory.js --agent codex --root . --project "My Project"` |
+| `scripts/token_report.js` | Rank expensive memory and rules files by estimated token cost | `node skills/token-saver/scripts/token_report.js --root . --json` |
+| `scripts/scaffold_compact_memory.js` | Generate a compact memory/rules scaffold | `node skills/token-saver/scripts/scaffold_compact_memory.js --agent codex --root . --project "My Project"` |
+| `scripts/emit_activation_snippet.js` | Emit ready-to-paste always-on snippets by agent and compression level | `node skills/token-saver/scripts/emit_activation_snippet.js --agent codex --level full` |
 
 ## Constraints
 
 **MUST DO**
-- Keep technical facts exact while removing filler, pleasantries, hedging, and repeated restatements.
-- Prefer short conclusions followed by compact evidence bullets when the topic is non-trivial.
-- Preserve code blocks, commands, paths, URLs, identifiers, equations, and configuration keys unchanged unless the user asked to rewrite them.
-- Keep memory files focused on durable defaults, constraints, workflow rules, and references the agent really needs every session.
-- For review comments, make each finding standalone and actionable.
+- Keep technical facts exact.
+- Prefer short conclusions plus compact bullets.
+- Keep memory files limited to durable defaults and hard rules.
+- For reviews, one finding per line.
+- For commits, prefer why over what.
 
 **MUST NOT DO**
-- Do not drop safety warnings, migration notes, or blockers just to save tokens.
-- Do not rewrite code syntax, shell commands, or config snippets into ambiguous shorthand.
-- Do not make answers cryptic or theatrical; the goal is fewer tokens, not a gimmick.
-- Do not keep long narrative background sections in memory files when bullets or tables say the same thing.
-- Do not compress ephemeral task details into persistent memory files.
+- Do not drop blockers, migration notes, or safety warnings.
+- Do not rewrite code or commands into ambiguous shorthand.
+- Do not store ephemeral notes or secrets in always-on memory files.
+- Do not waste tokens on praise, setup, or obvious narration when not needed.
 
-## Output Template
+## Output Micro-Formats
 
-Use the smallest format that still fits the task:
-
-### Compact technical answer
+### Terse answer
 
 ```text
-Verdict / main answer.
+Verdict.
 
-- Key fact 1.
-- Key fact 2.
+- Fact.
+- Fact.
 - Next step.
 ```
 
-### Compact commit
+### Terse commit
 
 ```text
-type(scope): short reason-focused subject
+type(scope): short why-focused subject
 ```
 
-### Compact review
+Target:
+- Conventional Commits
+- subject `<= 50` chars when possible
+- no body unless why is not obvious
+
+### Terse review
 
 ```text
-L42 bug: user may be null. Add guard before access.
+L42 bug: user may be null. Guard.
 ```
+
+Rules:
+- one line per finding
+- severity: `bug`, `risk`, `nit`, `q`
+- if code good: `LGTM`
 
 ### Compact memory file
 
@@ -85,25 +115,25 @@ L42 bug: user may be null. Add guard before access.
 # <Project> Memory
 
 ## Mission
-- Durable project objective.
+- Durable goal.
 
 ## Defaults
-- Concise answer style.
+- Terse by default.
 - Exact code and commands.
 
 ## Constraints
-- High-signal rules only.
+- Hard rules only.
 
 ## Workflow
-- Read context.
+- Read.
 - Act.
 - Validate.
 ```
 
 ## References
 
-- [caveman README](https://github.com/JuliusBrussee/caveman/blob/main/README.md)
-- [caveman command: caveman.toml](https://raw.githubusercontent.com/JuliusBrussee/caveman/main/commands/caveman.toml)
-- [caveman command: caveman-commit.toml](https://raw.githubusercontent.com/JuliusBrussee/caveman/main/commands/caveman-commit.toml)
-- [caveman command: caveman-review.toml](https://raw.githubusercontent.com/JuliusBrussee/caveman/main/commands/caveman-review.toml)
+- [caveman README](https://github.com/JuliusBrussee/caveman)
+- [caveman command prompt](https://raw.githubusercontent.com/JuliusBrussee/caveman/main/commands/caveman.toml)
+- [caveman commit prompt](https://raw.githubusercontent.com/JuliusBrussee/caveman/main/commands/caveman-commit.toml)
+- [caveman review prompt](https://raw.githubusercontent.com/JuliusBrussee/caveman/main/commands/caveman-review.toml)
 - [caveman-compress README](https://github.com/JuliusBrussee/caveman/blob/main/caveman-compress/README.md)

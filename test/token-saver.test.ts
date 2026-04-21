@@ -20,6 +20,13 @@ const SCAFFOLD_SCRIPT = path.join(
   "scripts",
   "scaffold_compact_memory.js",
 );
+const SNIPPET_SCRIPT = path.join(
+  WORKSPACE_ROOT,
+  "skills",
+  "token-saver",
+  "scripts",
+  "emit_activation_snippet.js",
+);
 
 test("token-saver token report ranks heavy memory files", async (t: TestContext) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-token-saver-"));
@@ -109,4 +116,19 @@ test("token-saver scaffold generates a compact codex memory file", async (t: Tes
   assert.match(scaffold, /## Constraints/m);
   assert.match(scaffold, /- No secrets in repo/m);
   assert.match(scaffold, /- Read the task/m);
+});
+
+test("token-saver emits always-on snippet by level", () => {
+  const result = spawnSync(
+    "node",
+    [SNIPPET_SCRIPT, "--agent", "codex", "--level", "ultra"],
+    {
+      cwd: WORKSPACE_ROOT,
+      encoding: "utf8",
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Max compression by default\./);
+  assert.match(result.stdout, /Keep code, commands, paths, URLs, and identifiers exact\./);
 });
