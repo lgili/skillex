@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import SkillCard from "../components/SkillCard.vue";
+import Skeleton from "../components/Skeleton.vue";
 import { useSkillexStore } from "../store";
+import type { CatalogSkill } from "../types";
 
 const store = useSkillexStore();
 const selectedCategory = ref("all");
 
 const CATEGORIES = [
-  { id: "all",         name: "Todas",       icon: "✦" },
+  { id: "all",         name: "All",         icon: "✦" },
   { id: "code",        name: "Code",        icon: "💻" },
   { id: "engineering", name: "Engineering", icon: "⚡" },
   { id: "workflow",    name: "Workflow",    icon: "🌿" },
@@ -17,6 +19,7 @@ const CATEGORIES = [
   { id: "research",    name: "Research",    icon: "🔍" },
   { id: "data",        name: "Data",        icon: "📊" },
   { id: "tools",       name: "Tools",       icon: "🔧" },
+  { id: "other",       name: "Other",       icon: "📦" },
 ];
 
 function inferCategory(id: string, tags: string[]): string {
@@ -37,16 +40,32 @@ function inferCategory(id: string, tags: string[]): string {
   return "other";
 }
 
+/**
+ * Resolves a skill's category. Prefers the explicit `category` declared in
+ * the skill manifest; falls back to the regex inference and flags the
+ * fallback so the UI can render an `(inferred)` chip.
+ */
+function resolveCategory(skill: CatalogSkill): { id: string; inferred: boolean } {
+  const explicit = skill.category?.trim();
+  if (explicit) {
+    return { id: explicit.toLowerCase(), inferred: false };
+  }
+  return { id: inferCategory(skill.id, skill.tags), inferred: true };
+}
+
 function categoryCount(catId: string): number {
   if (catId === "all") return store.state.catalog?.skills.length ?? 0;
-  return (store.state.catalog?.skills ?? []).filter(s => inferCategory(s.id, s.tags) === catId).length;
+  return (store.state.catalog?.skills ?? []).filter(s => resolveCategory(s).id === catId).length;
 }
 
 const visibleSkills = computed(() => {
   const base = store.filteredSkills.value;
   if (selectedCategory.value === "all") return base;
-  return base.filter(s => inferCategory(s.id, s.tags) === selectedCategory.value);
+  return base.filter(s => resolveCategory(s).id === selectedCategory.value);
 });
+
+/** True when the catalog response has not been fetched yet (first load). */
+const isInitialLoading = computed(() => store.state.catalog === null);
 </script>
 
 <template>
@@ -97,8 +116,13 @@ const visibleSkills = computed(() => {
       </div>
     </div>
 
+    <!-- Skeleton: shown while the first refreshAll() resolves. -->
+    <div v-if="isInitialLoading" class="catalog-grid">
+      <Skeleton v-for="n in 6" :key="`skeleton-${n}`" variant="card" />
+    </div>
+
     <!-- Empty state -->
-    <div v-if="visibleSkills.length === 0" class="empty-state">
+    <div v-else-if="visibleSkills.length === 0" class="empty-state">
       <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24"
            style="color:var(--text-dim);margin-bottom:4px;">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -114,6 +138,8 @@ const visibleSkills = computed(() => {
         v-for="skill in visibleSkills"
         :key="skill.id"
         :skill="skill"
+        :inferred-category="resolveCategory(skill).inferred"
+        :resolved-category-id="resolveCategory(skill).id"
         :on-open="store.navigateToSkill"
         :on-install="store.installSkill"
         :on-remove="store.removeSkill"

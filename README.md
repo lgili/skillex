@@ -52,6 +52,16 @@ npx skillex@latest list                                  # list every available 
 
 > **Tip:** after the first `npx skillex@latest` call, the binary is cached on your machine, so subsequent invocations can drop the `npx skillex@latest` prefix and just call `skillex`.
 
+## Demo
+
+| Surface | Preview |
+|---------|---------|
+| Terminal browser (`skillex` with no args) | ![TUI demo](https://raw.githubusercontent.com/lgili/skillex/main/docs/media/tui.gif) |
+| Web UI catalog page (`skillex ui`) | ![Web UI catalog](https://raw.githubusercontent.com/lgili/skillex/main/docs/media/web-ui.png) |
+| Web UI Doctor panel | ![Web UI Doctor](https://raw.githubusercontent.com/lgili/skillex/main/docs/media/web-ui-doctor.png) |
+
+> The media files live in [`docs/media/`](https://github.com/lgili/skillex/tree/main/docs/media) and are referenced via raw GitHub URLs so the npm tarball stays small. See [`docs/media/README.md`](https://github.com/lgili/skillex/blob/main/docs/media/README.md) for re-recording instructions.
+
 > **Important:** auto-sync is enabled by default. After `init`, `install`, `update`, and `remove`, Skillex automatically synchronizes skills into every detected adapter target. For directory-native adapters such as Codex, Claude, and Gemini, this materializes one folder per skill under the agent's `skills/` directory. For file-based adapters such as Copilot, Cursor, Cline, and Windsurf, it updates the adapter config file. Use `skillex sync` when you want to preview, re-run manually, or target a specific adapter.
 
 After `init`, Skillex saves the configured source list in the local lockfile. New workspaces start with `lgili/skillex@main` by default, and you can add more sources later with `skillex source add`.
@@ -514,6 +524,7 @@ catalog.json          ← optional but recommended
   "description": "Teaches the agent to write semantic commits and manage branches.",
   "author": "your-name",
   "tags": ["git", "workflow"],
+  "category": "workflow",
   "compatibility": ["codex", "copilot", "cline", "cursor", "claude", "gemini", "windsurf"],
   "entry": "SKILL.md",
   "files": ["SKILL.md", "tools/git-cleanup.js"],
@@ -523,12 +534,15 @@ catalog.json          ← optional but recommended
 }
 ```
 
+The `category` field is **optional**. When present, the Web UI groups the skill under that category explicitly. When absent, the catalog falls back to a regex-based inference and tags the resulting badge with a small `(inferred)` chip so contributors can see when their metadata is incomplete.
+
 ### `SKILL.md` frontmatter
 
 ```markdown
 ---
 name: "git-master"
 description: "Git workflow instructions"
+category: "workflow"
 autoInject: true
 activationPrompt: "Always apply Git Master rules when the user asks for Git help."
 ---
@@ -538,7 +552,7 @@ activationPrompt: "Always apply Git Master rules when the user asks for Git help
 Your skill content goes here...
 ```
 
-When `autoInject: true` and `activationPrompt` are set, `skillex sync` injects the activation prompt in a separate managed block for adapters that use a shared or dedicated config file.
+When `autoInject: true` and `activationPrompt` are set, `skillex sync` injects the activation prompt in a separate managed block for adapters that use a shared or dedicated config file. `category` is optional and behaves the same whether declared in `skill.json` or in the SKILL.md frontmatter.
 
 ---
 

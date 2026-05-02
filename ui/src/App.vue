@@ -21,9 +21,32 @@ function closeDrawer() {
   drawerOpen.value = false;
 }
 
+const searchInputEl = ref<HTMLInputElement | null>(null);
+const isMac = typeof navigator !== "undefined" && /Mac|iPad|iPhone|iPod/.test(navigator.platform);
+const cmdKLabel = isMac ? "⌘K" : "Ctrl K";
+const cmdKHint = isMac ? "Press ⌘K to focus" : "Press Ctrl+K to focus";
+
+async function focusSearch(): Promise<void> {
+  // If we're not on the catalog page, navigate there first so the input exists.
+  if (route.name !== "catalog") {
+    await router.push({ name: "catalog" });
+  }
+  // Defer until the next microtask so v-if-mounted inputs are available.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const el = searchInputEl.value ?? document.getElementById("topbar-search") as HTMLInputElement | null;
+  el?.focus();
+  el?.select();
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && drawerOpen.value) {
     drawerOpen.value = false;
+    return;
+  }
+  // Cmd+K (Mac) or Ctrl+K (other) focuses the search input.
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    void focusSearch();
   }
 }
 
@@ -151,6 +174,12 @@ watch(
                   d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
           Doctor
+          <span
+            v-if="store.state.doctorStatus"
+            class="doctor-status-dot"
+            :data-status="store.state.doctorStatus"
+            :title="`Doctor: ${store.state.doctorStatus}`"
+          ></span>
         </button>
 
         <p class="nav-section-label">Workspace</p>
@@ -261,11 +290,14 @@ watch(
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
           </svg>
           <input
+            id="topbar-search"
+            ref="searchInputEl"
             :value="store.state.searchQuery"
             type="search"
             placeholder="Search skills..."
             @input="store.setSearchQuery(($event.target as HTMLInputElement).value)"
           />
+          <span class="search-kbd" :title="cmdKHint">{{ cmdKLabel }}</span>
         </div>
 
         <!-- Scope toggle -->

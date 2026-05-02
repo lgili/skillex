@@ -82,6 +82,8 @@ export interface CatalogSkill {
     ref: string;
     label?: string | undefined;
   };
+  /** Optional explicit category from skill.json or SKILL.md frontmatter. */
+  category?: string | undefined;
   scripts?: Record<string, string> | undefined;
 }
 

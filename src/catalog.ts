@@ -104,6 +104,7 @@ interface SkillCandidate {
   compatibility?: string[] | undefined;
   entry?: string | undefined;
   files?: string[] | undefined;
+  category?: string | undefined;
 }
 
 /**
@@ -300,6 +301,7 @@ async function loadCatalogFromTree(source: CatalogSource): Promise<CatalogData> 
           name: metadata.name || skillId,
           description: metadata.description || "",
           files: collectFilesUnderPath(files, skillPath),
+          ...(metadata.category ? { category: metadata.category } : {}),
         },
         source,
       );
@@ -373,6 +375,7 @@ function normalizeSkill(skill: SkillCandidate, source: CatalogSource): SkillMani
   const skillPath = skill.path || `${source.skillsDir}/${id}`;
   const files = Array.isArray(skill.files) ? skill.files.map(assertSafeRelativePath) : ["SKILL.md"];
   const uniqueFiles = [...new Set(files)];
+  const category = typeof skill.category === "string" && skill.category.trim() ? skill.category.trim() : undefined;
 
   return {
     id,
@@ -385,6 +388,7 @@ function normalizeSkill(skill: SkillCandidate, source: CatalogSource): SkillMani
     entry: skill.entry || "SKILL.md",
     path: stripLeadingSlash(skillPath),
     files: uniqueFiles,
+    ...(category !== undefined ? { category } : {}),
   };
 }
 

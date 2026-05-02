@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import Skeleton from "../components/Skeleton.vue";
 import { useSkillexStore } from "../store";
 
 interface DoctorCheck {
@@ -61,7 +62,12 @@ function symbolFor(status: DoctorCheck["status"]): string {
 
     <div v-if="error" class="status-banner" data-tone="error">{{ error }}</div>
 
-    <div v-if="report" class="panel" style="padding:0;overflow:hidden;">
+    <!-- Skeleton during the first load. -->
+    <div v-if="loading && !report" class="panel" style="padding:8px;display:grid;gap:8px;">
+      <Skeleton v-for="n in 4" :key="`doctor-skel-${n}`" variant="row" />
+    </div>
+
+    <div v-else-if="report" class="panel" style="padding:0;overflow:hidden;">
       <div
         v-for="check in report.checks"
         :key="check.name"

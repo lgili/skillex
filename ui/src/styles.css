@@ -1306,6 +1306,37 @@ body::before {
 ::-webkit-scrollbar-thumb { background: rgba(63,63,70,0.6); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(82,82,91,0.8); }
 
+/* ─── Doctor status dot in the sidebar ──────────────────────────────────── */
+.doctor-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-left: auto;
+  box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.6);
+}
+.doctor-status-dot[data-status="pass"] { background: #34d399; }
+.doctor-status-dot[data-status="warn"] { background: #facc15; }
+.doctor-status-dot[data-status="fail"] {
+  background: #f87171;
+  animation: doctor-pulse 1.6s ease-in-out infinite;
+}
+@keyframes doctor-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.6), 0 0 0 0 rgba(248, 113, 113, 0.4); }
+  50%      { box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.6), 0 0 0 6px rgba(248, 113, 113, 0); }
+}
+
+/* ─── Topbar search keyboard hint ───────────────────────────────────────── */
+.search-kbd {
+  font-family: monospace;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(82, 82, 91, 0.4);
+  background: rgba(39, 39, 42, 0.5);
+  color: var(--text-dim);
+}
+
 /* ─── Mobile drawer + hamburger ─────────────────────────────────────────── */
 .mobile-hamburger {
   display: none;

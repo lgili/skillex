@@ -81,6 +81,20 @@ test("searchCatalogSkills filtra por texto e compatibilidade", () => {
   assert.equal(results[0]!.id, "git-master");
 });
 
+test("parseSkillFrontmatter extracts the optional category field", () => {
+  assert.deepEqual(
+    parseSkillFrontmatter(`---\nname: x\ndescription: y\ncategory: code\n---\n`),
+    { name: "x", description: "y", category: "code" },
+  );
+  assert.deepEqual(
+    parseSkillFrontmatter(`---\nname: x\ncategory: "infra"\n---\n`),
+    { name: "x", category: "infra" },
+  );
+  // Missing category leaves the field undefined.
+  const without = parseSkillFrontmatter(`---\nname: x\n---\n`);
+  assert.equal(without.category, undefined);
+});
+
 test("parseSkillFrontmatter handles plain, quoted, and colon-bearing values", () => {
   // Plain value.
   assert.deepEqual(

@@ -6,6 +6,8 @@ export interface SkillFrontmatter {
   description?: string | undefined;
   autoInject?: boolean | undefined;
   activationPrompt?: string | undefined;
+  /** Optional explicit category for the skill (e.g. "code", "infra", "docs"). */
+  category?: string | undefined;
 }
 
 /**
@@ -47,6 +49,9 @@ export function parseSkillFrontmatter(content: string): SkillFrontmatter {
     }
     if (key === "activationPrompt" && typeof value === "string") {
       values.activationPrompt = value;
+    }
+    if (key === "category" && typeof value === "string") {
+      values.category = value;
     }
   }
 

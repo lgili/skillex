@@ -23,6 +23,9 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Aggregate status surfaced in the sidebar Doctor link. */
+export type DoctorStatus = "pass" | "warn" | "fail" | null;
+
 export interface SkillexStore {
   state: {
     bootstrap: WebUiBootstrap;
@@ -35,6 +38,10 @@ export interface SkillexStore {
     detailLoading: boolean;
     initialized: boolean;
     busyLabel: string | null;
+    /** Skill ids whose card-level action is currently in flight. */
+    busyCards: Set<string>;
+    /** Aggregate health from the most recent /api/doctor poll. */
+    doctorStatus: DoctorStatus;
     notice: { tone: NoticeTone; message: string } | null;
     toast: ToastState;
   };
@@ -57,7 +64,9 @@ export interface SkillexStore {
   removeSource: (repo: string) => Promise<void>;
   setSearchQuery: (query: string) => void;
   clearNotice: () => void;
-  /** Health-check report from the backend; powers the Doctor page. */
+  /** Refresh the cached aggregate doctor status (called on initialize + after mutations). */
+  loadDoctorStatus: () => Promise<void>;
+  /** Full Doctor report for the dedicated Doctor page. */
   loadDoctor: () => Promise<{
     scope: "local" | "global";
     stateDir: string;
@@ -80,6 +89,8 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     detailLoading: false,
     initialized: false,
     busyLabel: null as string | null,
+    busyCards: new Set<string>(),
+    doctorStatus: null as DoctorStatus,
     notice: null as { tone: NoticeTone; message: string } | null,
     toast: {
       visible: false,
@@ -128,12 +139,21 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     }
   }
 
-  async function runAction(label: string, action: () => Promise<unknown>, detailSkillId?: string | null): Promise<void> {
+  /**
+   * Runs a workspace-wide action with the global busy overlay. Used for
+   * refresh / sync / source mutations where blocking the whole page is OK.
+   */
+  async function runGlobalAction(
+    label: string,
+    action: () => Promise<unknown>,
+    detailSkillId?: string | null,
+  ): Promise<void> {
     state.busyLabel = label;
     try {
       await action();
       await refreshAfterMutation(detailSkillId);
       showNotice(`${label} complete.`, "success");
+      void loadDoctorStatus();
     } catch (error) {
       const message = formatError(error);
       state.notice = { message, tone: "error" };
@@ -141,6 +161,52 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
       throw error;
     } finally {
       state.busyLabel = null;
+    }
+  }
+
+  /**
+   * Runs an action targeted at a single skill card. The card shows a localized
+   * spinner via `state.busyCards`; the rest of the page stays interactive.
+   */
+  async function runCardAction(
+    skillId: string,
+    label: string,
+    action: () => Promise<unknown>,
+    detailSkillId?: string | null,
+  ): Promise<void> {
+    // Clone the Set so Vue's reactivity proxy notices the change.
+    const next = new Set(state.busyCards);
+    next.add(skillId);
+    state.busyCards = next;
+    try {
+      await action();
+      await refreshAfterMutation(detailSkillId);
+      showNotice(`${label} complete.`, "success");
+      void loadDoctorStatus();
+    } catch (error) {
+      const message = formatError(error);
+      state.notice = { message, tone: "error" };
+      showNotice(message, "error");
+      throw error;
+    } finally {
+      const cleared = new Set(state.busyCards);
+      cleared.delete(skillId);
+      state.busyCards = cleared;
+    }
+  }
+
+  async function loadDoctorStatus(): Promise<void> {
+    try {
+      const report = await api.getDoctor();
+      if (report.hasFailures) {
+        state.doctorStatus = "fail";
+      } else if (report.checks.some((c) => c.status === "warn")) {
+        state.doctorStatus = "warn";
+      } else {
+        state.doctorStatus = "pass";
+      }
+    } catch {
+      // Non-blocking: keep the previous status (or null on first load).
     }
   }
 
@@ -179,6 +245,7 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     }
     state.initialized = true;
     await refreshAll();
+    void loadDoctorStatus();
     if (routeSkillId) {
       await loadSkillDetail(routeSkillId);
     }
@@ -266,7 +333,8 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
       state.syncAdapter = adapter || "all";
     },
     async installSkill(skill: CatalogSkill) {
-      await runAction(
+      await runCardAction(
+        skill.id,
         `Installed ${skill.name}`,
         () =>
           api.installSkill(skill.id, {
@@ -278,29 +346,52 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     },
     async removeSkill(skillId: string) {
       const currentDetail = state.detail?.skill.id || null;
-      await runAction(`Removed ${skillId}`, () => api.removeSkill(skillId), currentDetail === skillId ? null : currentDetail);
+      await runCardAction(
+        skillId,
+        `Removed ${skillId}`,
+        () => api.removeSkill(skillId),
+        currentDetail === skillId ? null : currentDetail,
+      );
       if (currentDetail === skillId) {
         state.detail = null;
         await navigateHome();
       }
     },
     async updateSkill(skillId?: string) {
-      await runAction(skillId ? `Updated ${skillId}` : "Updated installed skills", () => api.updateSkill(skillId), state.detail?.skill.id || null);
+      // Per-card spinner when updating a single skill; global overlay when
+      // updating the whole installed set.
+      if (skillId) {
+        await runCardAction(
+          skillId,
+          `Updated ${skillId}`,
+          () => api.updateSkill(skillId),
+          state.detail?.skill.id || null,
+        );
+      } else {
+        await runGlobalAction(
+          "Updated installed skills",
+          () => api.updateSkill(skillId),
+          state.detail?.skill.id || null,
+        );
+      }
     },
     async syncNow() {
-      await runAction("Sync finished", () => api.syncSkills(state.syncAdapter), state.detail?.skill.id || null);
+      await runGlobalAction("Sync finished", () => api.syncSkills(state.syncAdapter), state.detail?.skill.id || null);
     },
     async addSource(source) {
-      await runAction(`Added ${source.repo}`, () => api.addSource(source), state.detail?.skill.id || null);
+      await runGlobalAction(`Added ${source.repo}`, () => api.addSource(source), state.detail?.skill.id || null);
     },
     async removeSource(repo: string) {
-      await runAction(`Removed ${repo}`, () => api.removeSource(repo), state.detail?.skill.id || null);
+      await runGlobalAction(`Removed ${repo}`, () => api.removeSource(repo), state.detail?.skill.id || null);
     },
     setSearchQuery(query: string) {
       state.searchQuery = query;
     },
     clearNotice() {
       state.notice = null;
+    },
+    async loadDoctorStatus() {
+      await loadDoctorStatus();
     },
     loadDoctor() {
       return api.getDoctor();

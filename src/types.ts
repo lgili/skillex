@@ -87,6 +87,11 @@ export interface ParsedGitHubRepo {
 
 /**
  * Skill manifest stored in catalog and local installs.
+ *
+ * `category` is optional. When present, it lets catalog publishers group
+ * skills explicitly (e.g. `"code"`, `"infra"`, `"docs"`) instead of relying
+ * on consumer-side regex inference. Consumers SHOULD prefer the declared
+ * value when one is provided.
  */
 export interface SkillManifest {
   id: string;
@@ -99,6 +104,7 @@ export interface SkillManifest {
   entry: string;
   path: string;
   files: string[];
+  category?: string | undefined;
   scripts?: Record<string, string> | undefined;
 }
 

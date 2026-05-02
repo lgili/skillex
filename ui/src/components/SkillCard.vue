@@ -1,12 +1,23 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { CatalogSkill } from "../types";
+import { useSkillexStore } from "../store";
 
 const props = defineProps<{
   skill: CatalogSkill;
   onOpen: (skillId: string) => void;
   onInstall: (skill: CatalogSkill) => Promise<void>;
   onRemove: (skillId: string) => Promise<void>;
+  /** When true, the resolved category came from regex inference (no explicit declaration). */
+  inferredCategory?: boolean;
+  /** Resolved category id (lowercase). Optional; only used for the inferred chip context. */
+  resolvedCategoryId?: string;
 }>();
+
+const store = useSkillexStore();
+
+/** True when this card has an in-flight install/remove/update action. */
+const isBusy = computed(() => store.state.busyCards.has(props.skill.id));
 
 const CATEGORY_MAP: Record<string, string> = {
   workflow: "icon-bg-workflow",
@@ -82,10 +93,41 @@ function avatarBackground(skill: CatalogSkill): string {
 }
 </script>
 
+<style scoped>
+.skill-card.is-busy {
+  opacity: 0.65;
+  filter: saturate(0.7);
+  pointer-events: none;
+}
+.skill-card.is-busy .skill-card-actions {
+  pointer-events: auto;
+}
+.card-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: card-spin 0.7s linear infinite;
+}
+@keyframes card-spin {
+  to { transform: rotate(360deg); }
+}
+.inferred-chip {
+  font-size: 9px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px dashed rgba(82, 82, 91, 0.6);
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+</style>
+
 <template>
   <article
     class="skill-card"
-    :class="{ 'is-installed': skill.installed }"
+    :class="{ 'is-installed': skill.installed, 'is-busy': isBusy }"
     @click="onOpen(skill.id)"
   >
     <div class="skill-card-body">
@@ -160,10 +202,21 @@ function avatarBackground(skill: CatalogSkill): string {
       </div>
 
       <div class="skill-card-actions" @click.stop>
+        <span v-if="inferredCategory" class="inferred-chip" title="Category inferred from id/tags. Add `category:` to the skill manifest to override.">
+          (inferred)
+        </span>
+
         <template v-if="skill.installed">
           <span class="installed-label">Installed</span>
-          <button class="remove-btn" type="button" title="Remove" @click="onRemove(skill.id)">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button
+            class="remove-btn"
+            type="button"
+            title="Remove"
+            :disabled="isBusy"
+            @click="onRemove(skill.id)"
+          >
+            <span v-if="isBusy" class="card-spinner" aria-label="Working"></span>
+            <svg v-else fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
             </svg>
@@ -174,12 +227,16 @@ function avatarBackground(skill: CatalogSkill): string {
             class="button button-primary"
             style="min-height:28px;padding:0 12px;font-size:0.75rem;"
             type="button"
+            :disabled="isBusy"
             @click="onInstall(skill)"
           >
-            <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-            </svg>
-            Install
+            <span v-if="isBusy" class="card-spinner" aria-label="Working"></span>
+            <template v-else>
+              <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+              </svg>
+              Install
+            </template>
           </button>
         </template>
       </div>

@@ -61,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/doctor.ts` exports `runDoctorChecks(options): Promise<DoctorReport>` — the canonical six health checks (lockfile, source, adapter, GitHub reachability, token, cache freshness) reused by both the CLI and the Web UI.
 - **Web UI:** new `Doctor` route + sidebar entry that renders the structured `DoctorReport` returned by the new `GET /api/doctor` endpoint, mirroring the CLI's `skillex doctor`.
 - **Web UI:** skill avatars are now a deterministic CSS-only initials chip (hashed HSL background). The previous `<img>` to `dicebear.com` is gone — the UI works offline and no longer leaks page-load telemetry to a third-party host.
+- **`SkillManifest.category` (optional)**: catalog publishers can now declare an explicit `category` in `skill.json` or `SKILL.md` frontmatter. The Web UI prefers it over regex inference and tags inferred categories with an `(inferred)` chip so contributors can see incomplete metadata at a glance.
+- **Web UI per-card optimistic UI:** install / remove / update on a single card now shows a localized spinner inside the action button instead of freezing the whole page behind the global busy overlay. Other cards remain interactive. Backed by a new `state.busyCards: Set<string>` in the store and a `runCardAction(skillId, label, fn)` helper.
+- **Web UI first-load skeleton:** new `Skeleton.vue` component. Catalog page renders a 6-card skeleton grid until the initial `refreshAll()` resolves; Doctor page renders a 4-row skeleton during its first fetch. No more blank panels on cold loads.
+- **Web UI sidebar health dot:** the Doctor sidebar entry now shows a small colored dot reflecting the latest aggregate status (green = pass, yellow = warn, red + pulse = fail). Refreshed on initialize and after every destructive action.
+- **Web UI Cmd+K shortcut:** pressing `Cmd+K` (Mac) or `Ctrl+K` focuses the topbar search. If the user is on a non-catalog route, the shortcut navigates to the catalog first and then focuses the input. The `⌘K` keyboard hint is back on the search input now that it's actually wired.
+- **`docs/media/`** directory with a `README.md` describing how to regenerate `tui.gif`, `web-ui.png`, and `web-ui-doctor.png`. The README now has a "Demo" section that references the media via raw GitHub URLs (no binaries shipped in the npm tarball).
 
 ## [0.3.1] - 2026-04-08
 
