@@ -38,15 +38,47 @@ async function focusSearch(): Promise<void> {
   el?.select();
 }
 
+/** True when the keyboard event originated from a typeable input field. */
+function eventTargetsTextInput(event: KeyboardEvent): boolean {
+  const target = event.target as HTMLElement | null;
+  if (!target) return false;
+  const tag = target.tagName;
+  return (
+    tag === "INPUT"
+    || tag === "TEXTAREA"
+    || tag === "SELECT"
+    || target.isContentEditable === true
+  );
+}
+
+async function broadcastInstallAll(): Promise<void> {
+  // Make sure the catalog page is mounted (so it can listen).
+  if (route.name !== "catalog") {
+    await router.push({ name: "catalog" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  window.dispatchEvent(new CustomEvent("skillex:request-install-all"));
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.key === "Escape" && drawerOpen.value) {
     drawerOpen.value = false;
     return;
   }
   // Cmd+K (Mac) or Ctrl+K (other) focuses the search input.
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "k") {
     event.preventDefault();
     void focusSearch();
+    return;
+  }
+  // Cmd+Shift+A (Mac) or Ctrl+Shift+A (other) opens the Install-all confirm
+  // dialog on the catalog page. We require Shift to avoid clobbering the
+  // browser's native "select all" binding (Cmd+A). Skipped when the user is
+  // typing in a text field.
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "a") {
+    if (eventTargetsTextInput(event)) return;
+    event.preventDefault();
+    void broadcastInstallAll();
   }
 }
 

@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { CatalogSkill } from "../types";
 import { useSkillexStore } from "../store";
+import { highlightSegments } from "../highlight";
 
 const props = defineProps<{
   skill: CatalogSkill;
@@ -18,6 +19,12 @@ const store = useSkillexStore();
 
 /** True when this card has an in-flight install/remove/update action. */
 const isBusy = computed(() => store.state.busyCards.has(props.skill.id));
+
+const searchQuery = computed(() => store.state.searchQuery);
+
+/** Pre-computed highlight segments for the title and description. */
+const nameSegments = computed(() => highlightSegments(props.skill.name, searchQuery.value));
+const descriptionSegments = computed(() => highlightSegments(props.skill.description, searchQuery.value));
 
 const CATEGORY_MAP: Record<string, string> = {
   workflow: "icon-bg-workflow",
@@ -122,6 +129,14 @@ function avatarBackground(skill: CatalogSkill): string {
   color: var(--text-dim);
   letter-spacing: 0.04em;
 }
+
+.search-mark {
+  background: rgba(16, 185, 129, 0.22);
+  color: #fff;
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: inherit;
+}
 </style>
 
 <template>
@@ -158,12 +173,22 @@ function avatarBackground(skill: CatalogSkill): string {
 
       <!-- Name + version -->
       <div class="skill-card-head">
-        <h3>{{ skill.name }}</h3>
+        <h3>
+          <template v-for="(seg, i) in nameSegments" :key="`name-${i}`">
+            <mark v-if="seg.match" class="search-mark">{{ seg.text }}</mark>
+            <template v-else>{{ seg.text }}</template>
+          </template>
+        </h3>
         <span class="version-badge">v{{ skill.version }}</span>
       </div>
 
       <!-- Description -->
-      <p class="skill-description">{{ skill.description }}</p>
+      <p class="skill-description">
+        <template v-for="(seg, i) in descriptionSegments" :key="`desc-${i}`">
+          <mark v-if="seg.match" class="search-mark">{{ seg.text }}</mark>
+          <template v-else>{{ seg.text }}</template>
+        </template>
+      </p>
 
       <!-- Tags -->
       <div v-if="skill.tags.length > 0" class="tag-block">

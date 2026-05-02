@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import ConfirmDialog from "../components/ConfirmDialog.vue";
 import SkillCard from "../components/SkillCard.vue";
 import Skeleton from "../components/Skeleton.vue";
+import { RECOMMENDED_SKILL_IDS } from "../recommended";
 import { useSkillexStore } from "../store";
 import type { CatalogSkill } from "../types";
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPad|iPhone|iPod/.test(navigator.platform);
+const installAllShortcutLabel = isMac ? "⇧⌘A" : "Ctrl+Shift+A";
 
 const store = useSkillexStore();
 const selectedCategory = ref("all");
@@ -59,6 +63,13 @@ const totalSkills = computed(() => store.state.catalog?.skills.length ?? 0);
 const installedCount = computed(() => store.state.dashboard?.installed.length ?? 0);
 const notInstalledCount = computed(() => Math.max(0, totalSkills.value - installedCount.value));
 
+/** Recommended ids present in the catalog AND not yet installed. */
+const recommendedRemaining = computed(() => {
+  const catalogIds = new Set((store.state.catalog?.skills ?? []).map((s) => s.id));
+  const installedIds = new Set((store.state.dashboard?.installed ?? []).map((s) => s.id));
+  return RECOMMENDED_SKILL_IDS.filter((id) => catalogIds.has(id) && !installedIds.has(id));
+});
+
 const visibleSkills = computed(() => {
   let base = store.filteredSkills.value;
   if (selectedCategory.value !== "all") {
@@ -87,6 +98,14 @@ async function handleInstallAll(): Promise<void> {
   }
 }
 
+async function handleInstallRecommended(): Promise<void> {
+  try {
+    await store.installRecommended();
+  } catch {
+    /* error already surfaced via toast */
+  }
+}
+
 async function handleRemoveAll(): Promise<void> {
   showRemoveAll.value = false;
   try {
@@ -101,6 +120,15 @@ function clearFilters(): void {
   selectedCategory.value = "all";
   installedOnly.value = false;
 }
+
+/** Listener wired via App.vue's keyboard shortcut bus. */
+function onInstallAllRequested(): void {
+  if (notInstalledCount.value === 0 || store.state.busyLabel) return;
+  showInstallAll.value = true;
+}
+
+onMounted(() => window.addEventListener("skillex:request-install-all", onInstallAllRequested));
+onUnmounted(() => window.removeEventListener("skillex:request-install-all", onInstallAllRequested));
 </script>
 
 <template>
@@ -121,7 +149,9 @@ function clearFilters(): void {
             class="button button-primary"
             type="button"
             :disabled="notInstalledCount === 0 || store.state.busyLabel !== null"
-            :title="notInstalledCount === 0 ? 'All skills are already installed.' : `Install all ${notInstalledCount} remaining skill(s) into your workspace.`"
+            :title="notInstalledCount === 0
+              ? 'All skills are already installed.'
+              : `Install all ${notInstalledCount} remaining skill(s) into your workspace. (${installAllShortcutLabel})`"
             @click="showInstallAll = true"
           >
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -129,6 +159,22 @@ function clearFilters(): void {
             </svg>
             Install all
             <span v-if="notInstalledCount > 0" class="bulk-count">{{ notInstalledCount }}</span>
+            <span v-if="notInstalledCount > 0" class="bulk-shortcut" aria-hidden="true">{{ installAllShortcutLabel }}</span>
+          </button>
+          <button
+            v-if="recommendedRemaining.length > 0"
+            class="button button-secondary"
+            type="button"
+            :disabled="store.state.busyLabel !== null"
+            :title="`Install the curated starter pack: ${recommendedRemaining.join(', ')}`"
+            @click="handleInstallRecommended"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.539 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+            </svg>
+            Install recommended
+            <span class="bulk-count" style="background:rgba(16,185,129,0.18);color:var(--accent);">{{ recommendedRemaining.length }}</span>
           </button>
           <button
             v-if="installedCount > 0"
@@ -291,6 +337,20 @@ function clearFilters(): void {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: #fff;
+}
+
+.bulk-shortcut {
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+@media (max-width: 900px) {
+  .bulk-shortcut { display: none; }
 }
 
 .danger-ghost {

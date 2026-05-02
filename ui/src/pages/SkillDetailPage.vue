@@ -39,23 +39,41 @@ onMounted(() => void loadCurrentSkill());
           <h2>{{ detail.skill.name }}</h2>
           <p class="detail-description">{{ detail.skill.description }}</p>
         </div>
+        <!--
+          Action order follows the design-principle "primary action last": passive
+          (Sync) -> secondary (Update, only when installed) -> primary (Install) or
+          destructive (Remove). The right-most button is what most users will hit
+          on this screen.
+        -->
         <div class="detail-actions">
-          <button class="button button-secondary" type="button" @click="store.updateSkill(detail.skill.id)">
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button class="button button-ghost" type="button" @click="store.syncNow()" title="Re-sync this workspace's adapters">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
             </svg>
+            Sync
+          </button>
+          <button
+            v-if="detail.skill.installed"
+            class="button button-secondary"
+            type="button"
+            :title="`Re-fetch ${detail.skill.id} from its source`"
+            @click="store.updateSkill(detail.skill.id)"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M16 12a4 4 0 11-8 0 4 4 0 018 0zM12 8V4m0 16v-4m4-4h4M4 12h4"/>
+            </svg>
             Update
           </button>
-          <button class="button button-ghost" type="button" @click="store.syncNow()">Sync</button>
           <button
             v-if="!detail.skill.installed"
             class="button button-primary"
             type="button"
             @click="store.installSkill(detail.skill)"
           >
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
             </svg>
             Install
           </button>
@@ -65,7 +83,7 @@ onMounted(() => void loadCurrentSkill());
             type="button"
             @click="store.removeSkill(detail.skill.id)"
           >
-            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
             </svg>

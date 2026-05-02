@@ -58,6 +58,7 @@ export interface SkillexStore {
   setSyncAdapter: (adapter: string) => void;
   installSkill: (skill: CatalogSkill) => Promise<void>;
   installAll: (source?: { repo?: string; ref?: string }) => Promise<{ installedCount: number }>;
+  installRecommended: () => Promise<{ installedCount: number; missing: string[] }>;
   removeSkill: (skillId: string) => Promise<void>;
   removeAllInstalled: () => Promise<{ removedCount: number }>;
   updateSkill: (skillId?: string) => Promise<void>;
@@ -354,6 +355,39 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
         "Installing every skill in the catalog",
         async () => {
           summary = await api.installAll(source);
+        },
+        state.detail?.skill.id || null,
+      );
+      return summary;
+    },
+    async installRecommended() {
+      // Resolve recommended ids that are present in the loaded catalog and
+      // not yet installed; the rest are surfaced as `missing` for the toast.
+      const { RECOMMENDED_SKILL_IDS } = await import("./recommended.js");
+      const catalogIds = new Set((state.catalog?.skills ?? []).map((s) => s.id));
+      const installedIds = new Set((state.dashboard?.installed ?? []).map((s) => s.id));
+      const targets = RECOMMENDED_SKILL_IDS.filter(
+        (id) => catalogIds.has(id) && !installedIds.has(id),
+      );
+      const missing = RECOMMENDED_SKILL_IDS.filter((id) => !catalogIds.has(id));
+      if (targets.length === 0) {
+        showNotice(
+          missing.length > 0
+            ? `Recommended pack already installed (skipped ${missing.length} not in catalog).`
+            : "Recommended pack is already installed.",
+          "info",
+        );
+        return { installedCount: 0, missing: [...missing] };
+      }
+      let summary: { installedCount: number; missing: string[] } = {
+        installedCount: 0,
+        missing: [...missing],
+      };
+      await runGlobalAction(
+        `Installing ${targets.length} recommended skill(s)`,
+        async () => {
+          const res = await api.installSkillIds([...targets]);
+          summary = { installedCount: res.installedCount, missing: [...missing] };
         },
         state.detail?.skill.id || null,
       );
