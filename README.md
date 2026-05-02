@@ -92,20 +92,38 @@ npx skillex <command>
 
 ### Local Web UI development
 
-When working on the repository itself, the browser UI is a standalone Vue 3 + Vite frontend under [`ui/`](/Users/lgili/Documents/01%20-%20Codes/01%20-%20Github/Skill/ui). The CLI serves the built assets from [`dist-ui/`](/Users/lgili/Documents/01%20-%20Codes/01%20-%20Github/Skill/dist-ui) and keeps all install/remove/update/sync logic in the local TypeScript backend.
+When working on the repository itself, the browser UI is a standalone Vue 3 + Vite frontend under `ui/`. The CLI serves the built assets from `dist-ui/` and keeps all install/remove/update/sync logic in the local TypeScript backend.
+
+**Production-style local run** — builds the UI, builds the backend, and serves the bundled output exactly like an end user gets via `npx skillex ui`:
 
 ```bash
 npm install
-npm run build:ui
-npm run build
+npm run build       # builds dist-ui + dist
 node ./bin/skillex.js ui
 ```
 
-For frontend-only iteration:
+**Hot-reload UI development** — Vite dev server with HMR. The UI talks to a separate `skillex ui` instance via the Vite proxy.
 
-```bash
-npm run dev:ui
-```
+1. **Terminal A** — start the backend so the UI has real data:
+
+   ```bash
+   node ./bin/skillex.js ui
+   # ➜ http://127.0.0.1:54321?token=<token>
+   ```
+
+2. **Terminal B** — start the Vite dev server pointing at that backend:
+
+   ```bash
+   VITE_SKILLEX_BACKEND=http://127.0.0.1:54321 npm run dev:ui
+   ```
+
+3. **Browser** — open the Vite dev server with the same token (one time only; it's cached in `localStorage` afterwards):
+
+   ```text
+   http://127.0.0.1:4174?token=<token>
+   ```
+
+If you forget step 3 or skip step 2, the dev page renders an in-app overlay with these instructions instead of throwing.
 
 ---
 

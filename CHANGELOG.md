@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Web UI dev mode (`npm run dev:ui`)** no longer throws `Missing Skillex Web UI bootstrap payload` and a blank page. When no bootstrap is injected (Vite serves `index.html` directly without the backend's substitution), an in-page overlay now explains exactly how to wire the dev server to a running `skillex ui` backend.
+- The dev page can also recover the bootstrap from a query string (e.g. `http://127.0.0.1:4174?token=<token>&scope=local`); the token is cached in `localStorage` so subsequent reloads work.
+
+### Added
+- `vite.config.ts` now reads a new `VITE_SKILLEX_BACKEND` env var. When set (e.g. `VITE_SKILLEX_BACKEND=http://127.0.0.1:54321 npm run dev:ui`), the Vite dev server proxies `/api/*` to that backend so the UI talks to a real `skillex ui` instance with HMR enabled.
+- README "Local Web UI development" section rewritten with two flows: production-style (`npm run build && skillex ui`) and hot-reload (`VITE_SKILLEX_BACKEND=… npm run dev:ui`).
+
 ## [0.4.0] - 2026-05-02
 
 A substantial release focused on **reliability, security, and UX**. The CLI is
