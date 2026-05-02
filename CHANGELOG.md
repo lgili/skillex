@@ -7,9 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `HttpError` typed error with codes `HTTP_TIMEOUT`, `HTTP_RATE_LIMIT`, `HTTP_AUTH_FAILED`, `HTTP_NOT_FOUND`, `HTTP_SERVER_ERROR`, `HTTP_ERROR` so callers can react programmatically to specific failure modes.
+- `RemoveSkillsResult.autoSyncs: SyncCommandResult[]` carrying every per-adapter sync outcome after a remove (the existing `autoSync` field is preserved as the first adapter's result for backward compatibility).
+- `createSymlink(target, link, { allowedRoot })` overload that refuses to create links pointing outside the managed root, raising `ValidationError("SYMLINK_TARGET_UNSAFE")`.
+
 ### Changed
+- **Reliability:** all HTTP helpers now abort after a default 30-second timeout when the caller does not provide their own `AbortSignal`, raising `HttpError("HTTP_TIMEOUT")` instead of hanging indefinitely.
+- **Performance:** `downloadSkillFiles` now fetches every file in a skill in parallel via `Promise.all`; multi-file skills now scale with bandwidth instead of file count.
+- **Security:** `Authorization: Bearer ${GITHUB_TOKEN}` is only attached when the request host is `api.github.com`, `raw.githubusercontent.com`, or any `*.githubusercontent.com` mirror. Tokens are no longer leaked to third-party `--catalog-url` targets.
+- **Security:** `~/.askillrc.json` (which may contain `githubToken`) is written with mode `0o600`; existing world-readable files are tightened on next save with a one-time warning.
+- **Security:** `removeSkill` validates `metadata.path` against the managed skills store before deleting; tampered lockfile paths raise `INSTALL_PATH_UNSAFE` instead of removing arbitrary directories.
+- **Security:** Sync per-skill symlinks now refuse targets that resolve outside the workspace state directory.
+- **Security:** `parseDirectGitHubRef` validates the ref segment against `^[A-Za-z0-9_.\-/]+$` and rejects empty refs after `@`; previously dangerous refs would land in the lockfile.
+- **HTTP errors:** 403 responses are now split into `HTTP_RATE_LIMIT` (when `X-RateLimit-Remaining: 0`) and `HTTP_AUTH_FAILED`, with separate actionable messages.
+- **`maybeSyncAfterRemove`** now runs adapter syncs in parallel via `Promise.all` and returns the full aggregate; the CLI prints one line per adapter after a multi-adapter remove (was previously dropping all but the last adapter's outcome).
+- **`toInstallError`** preserves the underlying `error.code` (HTTP error codes, `EACCES`, `ENOENT`, etc.) on the wrapped `InstallError` so callers can distinguish failure modes.
 - Refactor: `src/install.ts` split into focused modules — `src/lockfile.ts`, `src/direct-github.ts`, `src/auto-sync.ts`, and `src/downloader.ts`. Public `package.json#exports` and import paths preserved via re-exports. Zero user-visible behavior change.
 - Consolidated SKILL.md frontmatter parsing on `parseSkillFrontmatter` (`src/skill.ts`); the duplicate inline parser in `src/catalog.ts` was removed.
+
+### Fixed
+- `toLockfileSource` boolean expression no longer contains a duplicated `(label || repo === DEFAULT_REPO)` test (copy-paste artifact); behavior unchanged.
 
 ## [0.3.1] - 2026-04-08
 

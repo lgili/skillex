@@ -22,7 +22,7 @@ import {
   DEFAULT_REPO,
   getScopedStatePaths,
 } from "./config.js";
-import { ensureDir, pathExists, readJson, removePath, writeJson, writeText } from "./fs.js";
+import { ensureDir, isPathInside, pathExists, readJson, removePath, writeJson, writeText } from "./fs.js";
 import { buildRawGitHubUrl, loadCatalog, resolveSource } from "./catalog.js";
 import { resolveAdapterState } from "./adapters.js";
 import { loadInstalledSkillDocuments, syncAdapterFiles } from "./sync.js";
@@ -432,14 +432,21 @@ export async function removeSkills(
         continue;
       }
 
-      await removePath(resolveInstalledSkillPath(cwd, metadata.path));
+      const resolvedSkillPath = resolveInstalledSkillPath(cwd, metadata.path);
+      if (!isPathInside(resolvedSkillPath, statePaths.skillsDirPath)) {
+        throw new InstallError(
+          `Refusing to remove "${skillId}": lockfile path "${metadata.path}" resolves outside the managed skills store (${statePaths.skillsDirPath}).`,
+          "INSTALL_PATH_UNSAFE",
+        );
+      }
+      await removePath(resolvedSkillPath);
       delete lockfile.installed[skillId];
       removedSkills.push(skillId);
     }
 
     lockfile.updatedAt = now();
     await writeJson(statePaths.lockfilePath, lockfile);
-    const autoSync = await maybeSyncAfterRemove(
+    const autoSyncs = await maybeSyncAfterRemove(
       withAgentSkillsDir(
         {
           cwd,
@@ -462,7 +469,8 @@ export async function removeSkills(
       statePaths,
       removedSkills,
       missingSkills,
-      autoSync,
+      autoSync: autoSyncs?.[0] ?? null,
+      autoSyncs: autoSyncs ?? [],
     };
   } catch (error) {
     throw toInstallError(error, "Failed to remove skills");
@@ -986,8 +994,18 @@ function toInstallError(error: unknown, fallbackMessage: string): InstallError {
     return new InstallError(error.message, error.code);
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  return new InstallError(`${fallbackMessage}: ${message}`);
+  // Preserve the underlying error code when present (HttpError, NodeJS.ErrnoException, etc.)
+  // so callers can react programmatically to specific failure modes such as
+  // HTTP_RATE_LIMIT, HTTP_TIMEOUT, EACCES, ENOENT, etc.
+  const underlyingCode =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code: unknown }).code)
+      : null;
+  const baseMessage = error instanceof Error ? error.message : String(error);
+  const annotatedMessage = underlyingCode
+    ? `${fallbackMessage}: ${baseMessage} (${underlyingCode})`
+    : `${fallbackMessage}: ${baseMessage}`;
+  return new InstallError(annotatedMessage, underlyingCode || "INSTALL_ERROR");
 }
 
 // Silence unused-import warnings while keeping the symbols available as named re-exports.

@@ -98,7 +98,8 @@ export async function syncAdapterFiles(options: SyncOptions): Promise<SyncResult
         }
       } else if (prepared.directoryEntries) {
         await ensureDir(prepared.absoluteTargetPath);
-        const createLink = options.linkFactory || createSymlink;
+        const createLink = options.linkFactory
+          || ((t: string, l: string) => createSymlink(t, l, { allowedRoot: options.statePaths.stateDir }));
         let finalMode = prepared.syncMode;
 
         for (const entry of prepared.directoryEntries) {
@@ -130,7 +131,8 @@ export async function syncAdapterFiles(options: SyncOptions): Promise<SyncResult
         }
 
         if (prepared.syncMode === "symlink" && prepared.generatedSourcePath) {
-          const createLink = options.linkFactory || createSymlink;
+          const createLink = options.linkFactory
+          || ((t: string, l: string) => createSymlink(t, l, { allowedRoot: options.statePaths.stateDir }));
           const linkResult = await createLink(prepared.generatedSourcePath, prepared.absoluteTargetPath);
 
           if (linkResult.fallback) {

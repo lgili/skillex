@@ -3,6 +3,17 @@ import * as path from "node:path";
 import type { CreateSymlinkResult } from "./types.js";
 import { ValidationError } from "./types.js";
 
+/** Optional safety constraints for `createSymlink`. */
+export interface CreateSymlinkOptions {
+  /**
+   * When provided, the resolved symlink target MUST be inside this directory.
+   * Anything outside (including paths that escape via `..`) is rejected with
+   * a `ValidationError`. Use this to confine adapter symlinks to the
+   * managed skills store.
+   */
+  allowedRoot?: string | undefined;
+}
+
 /**
  * Checks whether a file or directory exists.
  *
@@ -110,12 +121,33 @@ export async function copyPath(sourcePath: string, targetPath: string): Promise<
 /**
  * Creates a relative symlink and reports whether the caller should fall back to copy mode.
  *
+ * When `options.allowedRoot` is set, the resolved target MUST be inside it; targets
+ * outside the root raise `ValidationError("SYMLINK_TARGET_UNSAFE")` and no link is
+ * written. This prevents a tampered lockfile from pointing adapter symlinks at
+ * arbitrary filesystem locations.
+ *
  * @param targetPath - Absolute path the link should point to.
  * @param linkPath - Absolute path of the symlink to create.
+ * @param options - Optional safety constraints.
  * @returns Symlink creation result.
  */
-export async function createSymlink(targetPath: string, linkPath: string): Promise<CreateSymlinkResult> {
+export async function createSymlink(
+  targetPath: string,
+  linkPath: string,
+  options: CreateSymlinkOptions = {},
+): Promise<CreateSymlinkResult> {
   const absoluteTarget = path.resolve(targetPath);
+
+  if (options.allowedRoot) {
+    const allowedRoot = path.resolve(options.allowedRoot);
+    if (!isPathInside(absoluteTarget, allowedRoot)) {
+      throw new ValidationError(
+        `Refusing to symlink outside the managed root: target=${absoluteTarget} root=${allowedRoot}`,
+        "SYMLINK_TARGET_UNSAFE",
+      );
+    }
+  }
+
   const relativeTarget = path.relative(path.dirname(linkPath), absoluteTarget) || ".";
   await ensureDir(path.dirname(linkPath));
   await removePath(linkPath);
@@ -143,6 +175,22 @@ export async function createSymlink(targetPath: string, linkPath: string): Promi
     }
     throw error;
   }
+}
+
+/**
+ * Returns `true` when `candidate` resolves to a path inside `root` (or equals `root`).
+ */
+export function isPathInside(candidate: string, root: string): boolean {
+  const candidateAbs = path.resolve(candidate);
+  const rootAbs = path.resolve(root);
+  if (candidateAbs === rootAbs) {
+    return true;
+  }
+  const rel = path.relative(rootAbs, candidateAbs);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    return false;
+  }
+  return true;
 }
 
 /**

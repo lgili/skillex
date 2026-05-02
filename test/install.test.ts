@@ -71,6 +71,42 @@ test("parseDirectGitHubRef aceita owner/repo[@ref]", () => {
   assert.equal(parseDirectGitHubRef("git-master"), null);
 });
 
+test("parseDirectGitHubRef aceita refs com slashes e pontos", () => {
+  assert.deepEqual(parseDirectGitHubRef("octocat/demo-skill@feature/foo"), {
+    owner: "octocat",
+    repo: "demo-skill",
+    ref: "feature/foo",
+  });
+  assert.deepEqual(parseDirectGitHubRef("octocat/demo-skill@v1.2.3"), {
+    owner: "octocat",
+    repo: "demo-skill",
+    ref: "v1.2.3",
+  });
+});
+
+test("parseDirectGitHubRef rejeita ref vazio apos @", () => {
+  assert.throws(
+    () => parseDirectGitHubRef("octocat/demo@"),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match((error as Error).message, /Invalid direct install ref/i);
+      return true;
+    },
+  );
+});
+
+test("parseDirectGitHubRef rejeita refs com caracteres perigosos", () => {
+  for (const evil of [
+    "octocat/demo@main; rm -rf /",
+    "octocat/demo@main`whoami`",
+    "octocat/demo@main$IFS$1foo",
+    "octocat/demo@main with space",
+    "octocat/demo@main|cat",
+  ]) {
+    assert.throws(() => parseDirectGitHubRef(evil), /disallowed characters/);
+  }
+});
+
 test("initProject usa o catalogo official por padrao", async (t: TestContext) => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "skillex-init-default-"));
   t.after(async () => {

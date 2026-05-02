@@ -497,7 +497,10 @@ async function handleRemove(positionals: string[], flags: CliFlags, userConfig: 
   for (const skillId of result.missingSkills) {
     output.warn(`${skillId} is not installed`);
   }
-  printAutoSyncResult(result.autoSync);
+  // Remove can fan out across multiple previously-synced adapters; report each.
+  for (const sync of result.autoSyncs) {
+    printAutoSyncResult(sync);
+  }
 }
 
 async function handleSync(flags: CliFlags, userConfig: UserConfig): Promise<void> {

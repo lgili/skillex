@@ -45,15 +45,17 @@ export async function downloadSkillFiles(args: {
   await removePath(args.targetDir);
   await ensureDir(args.targetDir);
 
-  for (const relativePath of args.files) {
-    const remotePath = args.skillRelPath
-      ? path.posix.join(args.skillRelPath, relativePath)
-      : relativePath;
-    const rawUrl = buildRawGitHubUrl(args.repo, args.ref, remotePath);
-    const content = await fetchText(rawUrl, { headers: { Accept: "text/plain" } });
-    const localPath = path.join(args.targetDir, relativePath);
-    await writeText(localPath, content);
-  }
+  await Promise.all(
+    args.files.map(async (relativePath) => {
+      const remotePath = args.skillRelPath
+        ? path.posix.join(args.skillRelPath, relativePath)
+        : relativePath;
+      const rawUrl = buildRawGitHubUrl(args.repo, args.ref, remotePath);
+      const content = await fetchText(rawUrl, { headers: { Accept: "text/plain" } });
+      const localPath = path.join(args.targetDir, relativePath);
+      await writeText(localPath, content);
+    }),
+  );
 }
 
 /**

@@ -61,6 +61,11 @@ export async function readUserConfig(): Promise<UserConfig> {
 /**
  * Writes the global user configuration file, merging with any existing values.
  *
+ * The file is always written with mode `0o600` so any stored `githubToken` is
+ * not world-readable. If a previous version of the file existed with looser
+ * permissions, the mode is tightened on save and a one-time warning is
+ * printed during the session.
+ *
  * @param updates - Key/value pairs to write.
  */
 export async function writeUserConfig(updates: Partial<UserConfig>): Promise<void> {
@@ -68,5 +73,26 @@ export async function writeUserConfig(updates: Partial<UserConfig>): Promise<voi
   const existing = await readUserConfig();
   const merged = { ...existing, ...updates };
   await fs.mkdir(path.dirname(configPath), { recursive: true });
-  await fs.writeFile(configPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+
+  let previousMode: number | null = null;
+  try {
+    const stat = await fs.stat(configPath);
+    previousMode = stat.mode & 0o777;
+  } catch {
+    previousMode = null;
+  }
+
+  await fs.writeFile(configPath, JSON.stringify(merged, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
+  // `fs.writeFile` with `mode` only applies on file creation; chmod afterwards to
+  // tighten an existing file's permissions.
+  await fs.chmod(configPath, 0o600);
+
+  if (previousMode !== null && previousMode !== 0o600 && !looseConfigWarned) {
+    looseConfigWarned = true;
+    console.warn(
+      `[skillex] Tightened permissions on ${configPath} from ${previousMode.toString(8)} to 600.`,
+    );
+  }
 }
+
+let looseConfigWarned = false;

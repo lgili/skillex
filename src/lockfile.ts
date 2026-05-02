@@ -180,12 +180,11 @@ export function dedupeSources(sources: LockfileSource[]): LockfileSource[] {
  * first-party repo (which gets the `official` label automatically).
  */
 export function toLockfileSource(source: CatalogSource, label?: string): LockfileSource {
+  const wantsLabel = Boolean(label) || source.repo === DEFAULT_REPO;
   return {
     repo: source.repo,
     ref: source.ref,
-    ...((label || source.repo === DEFAULT_REPO) && (label || source.repo === DEFAULT_REPO)
-      ? { label: label || "official" }
-      : {}),
+    ...(wantsLabel ? { label: label || "official" } : {}),
   };
 }
 

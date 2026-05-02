@@ -16,7 +16,10 @@ import { fetchOptionalJson, fetchOptionalText } from "./http.js";
 import { parseSkillFrontmatter } from "./skill.js";
 import * as path from "node:path";
 import type { DirectGitHubRef, SkillManifest } from "./types.js";
-import { InstallError } from "./types.js";
+import { CliError, InstallError } from "./types.js";
+
+/** Refs in `owner/repo[@ref]` form must match this character set. */
+const ALLOWED_REF_PATTERN = /^[A-Za-z0-9_.\-/]+$/;
 
 /** Resolved direct-install payload as returned by `fetchDirectGitHubSkill`. */
 export interface DirectInstallPayload {
@@ -36,24 +39,51 @@ export interface ConfirmDirectInstallOptions {
 /**
  * Parses a direct GitHub install reference in `owner/repo[@ref]` format.
  *
+ * The ref segment (when present) MUST match `^[A-Za-z0-9_.\-/]+$`. Empty
+ * refs (e.g. `owner/repo@`) and refs containing whitespace, newlines, or
+ * shell metacharacters are rejected with `CliError("INVALID_DIRECT_REF")`
+ * rather than silently defaulting to `main`.
+ *
  * @param input - User-supplied install argument.
  * @returns Parsed direct GitHub reference or `null` when the value is not a direct ref.
+ * @throws {CliError} When the value looks like a direct ref but the ref portion is invalid.
  */
 export function parseDirectGitHubRef(input: string): DirectGitHubRef | null {
   if (!input || input.startsWith("http://") || input.startsWith("https://")) {
     return null;
   }
 
-  const match = input.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:@(.+))?$/);
-  if (!match) {
+  const trimmed = input.trim();
+  // Detect "owner/repo[@maybeRef]" shape. The ref capture is greedy so we can
+  // validate exactly what the user typed (including empty values after `@`).
+  const shape = trimmed.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(@.*)?$/);
+  if (!shape) {
     return null;
   }
 
-  return {
-    owner: match[1]!,
-    repo: match[2]!,
-    ref: match[3] || "main",
-  };
+  const owner = shape[1]!;
+  const repo = shape[2]!;
+  const refSuffix = shape[3]; // e.g. "@v1.0.0" or "@" or undefined
+
+  let ref = "main";
+  if (refSuffix !== undefined) {
+    const rawRef = refSuffix.slice(1); // drop leading "@"
+    if (rawRef.length === 0) {
+      throw new CliError(
+        `Invalid direct install ref: empty ref after "@" in "${trimmed}". Use owner/repo or owner/repo@<branch|tag>.`,
+        "INVALID_DIRECT_REF",
+      );
+    }
+    if (!ALLOWED_REF_PATTERN.test(rawRef)) {
+      throw new CliError(
+        `Invalid direct install ref: "${rawRef}" contains disallowed characters. Allowed: letters, digits, "_", ".", "-", "/".`,
+        "INVALID_DIRECT_REF",
+      );
+    }
+    ref = rawRef;
+  }
+
+  return { owner, repo, ref };
 }
 
 /**

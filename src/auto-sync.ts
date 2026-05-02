@@ -110,13 +110,16 @@ export interface MaybeSyncAfterRemoveOptions {
 /**
  * Triggers a sync after remove operations across every previously-synced
  * adapter (so that removed skills are dropped from each adapter's view).
- * Returns the last sync result for backward compatibility; the multi-adapter
- * aggregation is addressed in `fix-http-reliability-and-security`.
+ *
+ * Each adapter is synced concurrently via `Promise.all` and the results are
+ * aggregated into an array so callers can report each adapter's outcome
+ * individually. Returns `null` when no sync was performed (no changes or
+ * no adapters to sync).
  */
 export async function maybeSyncAfterRemove(
   options: MaybeSyncAfterRemoveOptions,
   syncFn: SyncFn,
-): Promise<SyncCommandResult | null> {
+): Promise<SyncCommandResult[] | null> {
   if (!options.changed) {
     return null;
   }
@@ -136,17 +139,22 @@ export async function maybeSyncAfterRemove(
     }
   }
 
-  let result: SyncCommandResult | null = null;
-  for (const adapterId of adapters) {
-    result = await syncFn({
-      cwd: options.cwd,
-      scope: options.scope || DEFAULT_INSTALL_SCOPE,
-      ...(options.agentSkillsDir ? { agentSkillsDir: options.agentSkillsDir } : {}),
-      adapter: adapterId,
-      ...(options.mode ? { mode: options.mode } : {}),
-      now: options.now,
-    });
+  if (adapters.size === 0) {
+    return null;
   }
 
-  return result;
+  const results = await Promise.all(
+    [...adapters].map((adapterId) =>
+      syncFn({
+        cwd: options.cwd,
+        scope: options.scope || DEFAULT_INSTALL_SCOPE,
+        ...(options.agentSkillsDir ? { agentSkillsDir: options.agentSkillsDir } : {}),
+        adapter: adapterId,
+        ...(options.mode ? { mode: options.mode } : {}),
+        now: options.now,
+      }),
+    ),
+  );
+
+  return results;
 }

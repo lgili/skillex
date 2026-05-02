@@ -410,12 +410,17 @@ export interface UpdateInstalledSkillsResult {
 
 /**
  * Result returned by `removeSkills`.
+ *
+ * `autoSync` is preserved as the first adapter's result for backward
+ * compatibility; `autoSyncs` carries the full per-adapter aggregate so
+ * callers can report each adapter individually.
  */
 export interface RemoveSkillsResult {
   statePaths: StatePaths;
   removedSkills: string[];
   missingSkills: string[];
   autoSync: SyncCommandResult | null;
+  autoSyncs: SyncCommandResult[];
 }
 
 /**
@@ -544,5 +549,35 @@ export class CliError extends SkillexError {
    */
   constructor(message: string, code = "CLI_ERROR") {
     super(message, code);
+  }
+}
+
+/**
+ * Error thrown for HTTP failures, including timeouts, rate limits, and
+ * authentication failures. Preserves `status` and `url` for diagnostics.
+ *
+ * Possible `code` values:
+ * - `HTTP_TIMEOUT` — request aborted because of timeout
+ * - `HTTP_RATE_LIMIT` — GitHub rate limit exhausted
+ * - `HTTP_AUTH_FAILED` — 401 / 403 with auth-related cause
+ * - `HTTP_NOT_FOUND` — 404 surfaced as an error (non-optional fetchers)
+ * - `HTTP_SERVER_ERROR` — 5xx
+ * - `HTTP_ERROR` — fallback for other non-2xx responses
+ */
+export class HttpError extends SkillexError {
+  status?: number | undefined;
+  url?: string | undefined;
+
+  /**
+   * Creates an HTTP error.
+   */
+  constructor(message: string, code: string, options: { status?: number; url?: string } = {}) {
+    super(message, code);
+    if (options.status !== undefined) {
+      this.status = options.status;
+    }
+    if (options.url !== undefined) {
+      this.url = options.url;
+    }
   }
 }
