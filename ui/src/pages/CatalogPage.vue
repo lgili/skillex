@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import ConfirmDialog from "../components/ConfirmDialog.vue";
 import SkillCard from "../components/SkillCard.vue";
 import Skeleton from "../components/Skeleton.vue";
 import { useSkillexStore } from "../store";
@@ -7,6 +8,11 @@ import type { CatalogSkill } from "../types";
 
 const store = useSkillexStore();
 const selectedCategory = ref("all");
+/** When true, restrict the grid to the user's installed skills. */
+const installedOnly = ref(false);
+
+const showInstallAll = ref(false);
+const showRemoveAll = ref(false);
 
 const CATEGORIES = [
   { id: "all",         name: "All",         icon: "✦" },
@@ -24,13 +30,9 @@ const CATEGORIES = [
 
 function inferCategory(id: string, tags: string[]): string {
   const all = [id, ...tags].map(s => s.toLowerCase()).join(" ");
-  // Research: Wikipedia, ArXiv, PubMed, web search, web scraping
   if (/wikipedia|arxiv|pubmed|ncbi|duckduckgo|web-search|web-scraper|research-wikipedia|research-arxiv|research-pubmed/.test(all)) return "research";
-  // Data: data engineering, data science, ML pipelines
   if (/data-engineer|data-scientist|data-science|machine-learning|\bml\b|etl|elt|\bdbt\b|airflow|pipeline|feature-engineering|data-warehouse|data-modeling/.test(all)) return "data";
-  // Engineering: power electronics, circuits, numerical solvers, waveform analysis, schematics
   if (/simulation|mna|z-domain|magnetics|mosfet|igbt|waveform|fft|thd|newton-raphson|psim|schematic|netlist|altium|datasheet|curve-digitization|semiconductor/.test(all)) return "engineering";
-  // Code: programming languages and code-quality skills
   if (/typescript|python|cpp-pro|c-pro|code-review|error-handling/.test(all)) return "code";
   if (/git|commit|workflow|branch/.test(all)) return "workflow";
   if (/test|jest|tdd|vitest|spec/.test(all))  return "testing";
@@ -40,11 +42,6 @@ function inferCategory(id: string, tags: string[]): string {
   return "other";
 }
 
-/**
- * Resolves a skill's category. Prefers the explicit `category` declared in
- * the skill manifest; falls back to the regex inference and flags the
- * fallback so the UI can render an `(inferred)` chip.
- */
 function resolveCategory(skill: CatalogSkill): { id: string; inferred: boolean } {
   const explicit = skill.category?.trim();
   if (explicit) {
@@ -58,26 +55,95 @@ function categoryCount(catId: string): number {
   return (store.state.catalog?.skills ?? []).filter(s => resolveCategory(s).id === catId).length;
 }
 
+const totalSkills = computed(() => store.state.catalog?.skills.length ?? 0);
+const installedCount = computed(() => store.state.dashboard?.installed.length ?? 0);
+const notInstalledCount = computed(() => Math.max(0, totalSkills.value - installedCount.value));
+
 const visibleSkills = computed(() => {
-  const base = store.filteredSkills.value;
-  if (selectedCategory.value === "all") return base;
-  return base.filter(s => resolveCategory(s).id === selectedCategory.value);
+  let base = store.filteredSkills.value;
+  if (selectedCategory.value !== "all") {
+    base = base.filter(s => resolveCategory(s).id === selectedCategory.value);
+  }
+  if (installedOnly.value) {
+    base = base.filter(s => s.installed);
+  }
+  return base;
 });
 
 /** True when the catalog response has not been fetched yet (first load). */
 const isInitialLoading = computed(() => store.state.catalog === null);
+
+/** True when the catalog has loaded but the workspace has zero skills installed. */
+const isFreshWorkspace = computed(
+  () => !isInitialLoading.value && totalSkills.value > 0 && installedCount.value === 0,
+);
+
+async function handleInstallAll(): Promise<void> {
+  showInstallAll.value = false;
+  try {
+    await store.installAll();
+  } catch {
+    /* error already surfaced via toast */
+  }
+}
+
+async function handleRemoveAll(): Promise<void> {
+  showRemoveAll.value = false;
+  try {
+    await store.removeAllInstalled();
+  } catch {
+    /* error already surfaced via toast */
+  }
+}
+
+function clearFilters(): void {
+  store.setSearchQuery("");
+  selectedCategory.value = "all";
+  installedOnly.value = false;
+}
 </script>
 
 <template>
   <section class="page-column">
 
-    <!-- Hero panel -->
+    <!-- ── Hero panel ─────────────────────────────────────────────────────── -->
     <div class="panel">
-      <div class="panel-head">
+      <div class="panel-head" style="align-items:flex-start;flex-wrap:wrap;gap:16px;">
         <div class="panel-head-title">
           <p class="eyebrow">Discovery</p>
           <h2>Marketplace</h2>
-          <p>Skills validated for your AI agent.</p>
+          <p>Browse skills from your configured catalog sources and install them in your workspace.</p>
+        </div>
+
+        <!-- Bulk actions: shown only when the catalog has loaded. -->
+        <div v-if="!isInitialLoading && totalSkills > 0" class="bulk-actions">
+          <button
+            class="button button-primary"
+            type="button"
+            :disabled="notInstalledCount === 0 || store.state.busyLabel !== null"
+            :title="notInstalledCount === 0 ? 'All skills are already installed.' : `Install all ${notInstalledCount} remaining skill(s) into your workspace.`"
+            @click="showInstallAll = true"
+          >
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+            </svg>
+            Install all
+            <span v-if="notInstalledCount > 0" class="bulk-count">{{ notInstalledCount }}</span>
+          </button>
+          <button
+            v-if="installedCount > 0"
+            class="button button-ghost danger-ghost"
+            type="button"
+            :disabled="store.state.busyLabel !== null"
+            :title="`Remove all ${installedCount} installed skill(s) from your workspace.`"
+            @click="showRemoveAll = true"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Remove all ({{ installedCount }})
+          </button>
         </div>
       </div>
 
@@ -91,9 +157,15 @@ const isInitialLoading = computed(() => store.state.catalog === null);
           <span>Sources</span>
           <strong>{{ store.state.catalog?.sources.length ?? 0 }}</strong>
         </article>
-        <article class="overview-card">
+        <article class="overview-card overview-card-clickable" :class="{ active: installedOnly }"
+                 role="button"
+                 tabindex="0"
+                 :aria-pressed="installedOnly"
+                 :title="installedOnly ? 'Showing installed only — click to clear' : 'Click to filter installed only'"
+                 @click="installedOnly = !installedOnly"
+                 @keydown.enter.space.prevent="installedOnly = !installedOnly">
           <span>Installed</span>
-          <strong>{{ store.state.dashboard?.installed.length ?? 0 }}</strong>
+          <strong>{{ installedCount }}<span v-if="installedCount > 0" style="font-size:0.6em;color:var(--text-dim);font-weight:500;"> / {{ totalSkills }}</span></strong>
         </article>
       </div>
 
@@ -107,7 +179,7 @@ const isInitialLoading = computed(() => store.state.catalog === null);
           type="button"
           @click="selectedCategory = cat.id"
         >
-          <span>{{ cat.icon }}</span>
+          <span aria-hidden="true">{{ cat.icon }}</span>
           {{ cat.name }}
           <span v-if="cat.id !== 'all'" class="category-pill-count">
             {{ categoryCount(cat.id) }}
@@ -116,23 +188,52 @@ const isInitialLoading = computed(() => store.state.catalog === null);
       </div>
     </div>
 
-    <!-- Skeleton: shown while the first refreshAll() resolves. -->
+    <!-- ── Skeleton: first load ───────────────────────────────────────────── -->
     <div v-if="isInitialLoading" class="catalog-grid">
       <Skeleton v-for="n in 6" :key="`skeleton-${n}`" variant="card" />
     </div>
 
-    <!-- Empty state -->
-    <div v-else-if="visibleSkills.length === 0" class="empty-state">
-      <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-           style="color:var(--text-dim);margin-bottom:4px;">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-      </svg>
-      <strong>No skills found</strong>
-      <p>Try a different filter or add a source from the sidebar.</p>
+    <!-- ── Fresh workspace state: no skills installed yet, prominent CTAs ── -->
+    <div v-else-if="isFreshWorkspace && !installedOnly && selectedCategory === 'all' && !store.state.searchQuery"
+         class="onboarding-card">
+      <div class="onboarding-icon" aria-hidden="true">
+        <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
+                d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div class="onboarding-text">
+        <strong>Your workspace is set up. Install your first skill.</strong>
+        <p>{{ totalSkills }} skill(s) are available across {{ store.state.catalog?.sources.length ?? 0 }} source(s). Pick one below, or install everything at once.</p>
+      </div>
+      <button
+        class="button button-primary"
+        type="button"
+        :disabled="store.state.busyLabel !== null"
+        @click="showInstallAll = true"
+      >
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+        </svg>
+        Install all {{ totalSkills }} skills
+      </button>
     </div>
 
-    <!-- Grid -->
+    <!-- ── Filtered empty state ───────────────────────────────────────────── -->
+    <div v-else-if="visibleSkills.length === 0" class="empty-state">
+      <svg width="40" height="40" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+           style="color:var(--text-dim);margin-bottom:4px;" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <strong>No skills match your filters</strong>
+      <p>
+        Try a different category or search term, or
+        <button type="button" class="link-button" @click="clearFilters">clear all filters</button>.
+      </p>
+    </div>
+
+    <!-- ── Skill grid ─────────────────────────────────────────────────────── -->
     <div v-else class="catalog-grid">
       <SkillCard
         v-for="skill in visibleSkills"
@@ -146,5 +247,126 @@ const isInitialLoading = computed(() => store.state.catalog === null);
       />
     </div>
 
+    <!-- Confirmation dialogs -->
+    <ConfirmDialog
+      :open="showInstallAll"
+      title="Install every skill in the catalog?"
+      :message="`This will download and install ${notInstalledCount} skill(s) into your workspace. The active agent will be auto-synced when finished.`"
+      confirm-label="Install all"
+      @confirm="handleInstallAll"
+      @cancel="showInstallAll = false"
+    />
+    <ConfirmDialog
+      :open="showRemoveAll"
+      tone="danger"
+      title="Remove every installed skill?"
+      :message="`This will remove ${installedCount} skill(s) from your workspace. Synced adapter targets will be cleaned up automatically. This cannot be undone (you can reinstall via 'Install all').`"
+      confirm-label="Remove all"
+      @confirm="handleRemoveAll"
+      @cancel="showRemoveAll = false"
+    />
+
   </section>
 </template>
+
+<style scoped>
+.bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.bulk-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.danger-ghost {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+.danger-ghost:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+.overview-card-clickable {
+  cursor: pointer;
+  transition: border-color 150ms, background 150ms;
+  outline: none;
+}
+.overview-card-clickable:hover,
+.overview-card-clickable:focus-visible {
+  border-color: var(--accent-ring);
+}
+.overview-card-clickable.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.onboarding-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 20px 24px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--accent-ring);
+  background: linear-gradient(135deg, var(--accent-soft) 0%, rgba(16, 185, 129, 0.04) 100%);
+}
+
+.onboarding-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-ring);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.onboarding-text strong {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.onboarding-text p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-button:hover { color: var(--accent-hover); }
+
+@media (max-width: 680px) {
+  .onboarding-card {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .onboarding-icon { margin: 0 auto; }
+}
+</style>

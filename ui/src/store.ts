@@ -57,7 +57,9 @@ export interface SkillexStore {
   setScope: (scope: InstallScope) => Promise<void>;
   setSyncAdapter: (adapter: string) => void;
   installSkill: (skill: CatalogSkill) => Promise<void>;
+  installAll: (source?: { repo?: string; ref?: string }) => Promise<{ installedCount: number }>;
   removeSkill: (skillId: string) => Promise<void>;
+  removeAllInstalled: () => Promise<{ removedCount: number }>;
   updateSkill: (skillId?: string) => Promise<void>;
   syncNow: () => Promise<void>;
   addSource: (source: SourceInput) => Promise<void>;
@@ -344,6 +346,19 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
         state.detail?.skill.id || null,
       );
     },
+    async installAll(source) {
+      // Workspace-wide action: surface the global overlay so the user knows
+      // the whole grid is changing in one go.
+      let summary: { installedCount: number } = { installedCount: 0 };
+      await runGlobalAction(
+        "Installing every skill in the catalog",
+        async () => {
+          summary = await api.installAll(source);
+        },
+        state.detail?.skill.id || null,
+      );
+      return summary;
+    },
     async removeSkill(skillId: string) {
       const currentDetail = state.detail?.skill.id || null;
       await runCardAction(
@@ -356,6 +371,21 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
         state.detail = null;
         await navigateHome();
       }
+    },
+    async removeAllInstalled() {
+      const ids = (state.dashboard?.installed ?? []).map((s) => s.id);
+      if (ids.length === 0) {
+        return { removedCount: 0 };
+      }
+      let summary: { removedCount: number } = { removedCount: 0 };
+      await runGlobalAction(
+        `Removing ${ids.length} installed skill(s)`,
+        async () => {
+          const res = await api.removeSkills(ids);
+          summary = { removedCount: res.removedSkills.length };
+        },
+      );
+      return summary;
     },
     async updateSkill(skillId?: string) {
       // Per-card spinner when updating a single skill; global overlay when

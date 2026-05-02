@@ -79,6 +79,22 @@ export function createApiClient(options: ApiClientOptions) {
         },
       });
     },
+    installAll(source?: { repo?: string; ref?: string }) {
+      return request<{ installedCount: number; installedSkills: Array<{ id: string }> }>("/api/install", {
+        method: "POST",
+        body: {
+          all: true,
+          ...(source?.repo ? { repo: source.repo } : {}),
+          ...(source?.ref ? { ref: source.ref } : {}),
+        },
+      });
+    },
+    removeSkills(skillIds: string[]) {
+      return request<{ removedSkills: string[]; missingSkills: string[] }>("/api/remove", {
+        method: "POST",
+        body: { skillIds },
+      });
+    },
     removeSkill(skillId: string) {
       return request("/api/remove", {
         method: "POST",

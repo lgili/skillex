@@ -69,7 +69,7 @@ onMounted(() => void loadCurrentSkill());
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
             </svg>
-            Remover
+            Remove
           </button>
         </div>
       </div>
@@ -78,7 +78,7 @@ onMounted(() => void loadCurrentSkill());
     <!-- Loading -->
     <div v-if="store.state.detailLoading" class="empty-state panel">
       <div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(16,185,129,0.15);border-top-color:var(--accent);animation:spin 700ms linear infinite;"></div>
-      <strong>Carregando detalhes...</strong>
+      <strong>Loading skill...</strong>
     </div>
 
     <template v-else-if="detail">
