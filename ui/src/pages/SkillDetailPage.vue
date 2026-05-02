@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
+import Skeleton from "../components/Skeleton.vue";
 import { useSkillexStore } from "../store";
 import type { CatalogSkill } from "../types";
 
@@ -17,6 +18,26 @@ async function loadCurrentSkill() {
 
 watch(skillId, () => void loadCurrentSkill());
 onMounted(() => void loadCurrentSkill());
+
+/**
+ * Resolves the breadcrumb category for the current skill: prefers the
+ * explicit manifest field, falls back to a coarse inference based on tags,
+ * else `null` so the breadcrumb hides the segment.
+ */
+const breadcrumbCategory = computed<string | null>(() => {
+  const skill = detail.value?.skill;
+  if (!skill) return null;
+  const explicit = skill.category?.trim();
+  if (explicit) return explicit;
+  const blob = [skill.id, ...skill.tags].join(" ").toLowerCase();
+  if (/git|commit|workflow|branch/.test(blob)) return "workflow";
+  if (/test|jest|tdd|vitest|spec/.test(blob)) return "testing";
+  if (/security|owasp|audit|guard/.test(blob)) return "security";
+  if (/typescript|python|cpp-pro|c-pro|code-review|error-handling/.test(blob)) return "code";
+  if (/docker|devops|ci|cd|helm/.test(blob)) return "devops";
+  if (/wikipedia|arxiv|pubmed|web-search|web-scraper|research/.test(blob)) return "research";
+  return null;
+});
 
 /**
  * Computes up to 4 catalog skills that share the most tags with the current
@@ -58,13 +79,20 @@ const relatedSkills = computed<CatalogSkill[]>(() => {
     <!-- Hero panel -->
     <div class="panel">
       <div class="detail-topbar">
-        <button class="button button-ghost" type="button" @click="store.navigateHome()">
-          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-          </svg>
-          Catalog
-        </button>
-        <p class="section-label">Skill detail</p>
+        <!-- Breadcrumbs replace the previous "Skill detail" eyebrow + back button.
+             Last segment is the active page (no link). -->
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          <button class="breadcrumb-link" type="button" @click="store.navigateHome()">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3v-6h6v6h3a1 1 0 001-1V10" />
+            </svg>
+            Catalog
+          </button>
+          <span v-if="breadcrumbCategory" class="breadcrumb-sep" aria-hidden="true">/</span>
+          <span v-if="breadcrumbCategory" class="breadcrumb-segment">{{ breadcrumbCategory }}</span>
+          <span class="breadcrumb-sep" aria-hidden="true">/</span>
+          <span class="breadcrumb-current" aria-current="page">{{ detail?.skill.name ?? skillId }}</span>
+        </nav>
       </div>
 
       <div v-if="detail" class="detail-hero">
@@ -127,11 +155,26 @@ const relatedSkills = computed<CatalogSkill[]>(() => {
       </div>
     </div>
 
-    <!-- Loading -->
-    <div v-if="store.state.detailLoading" class="empty-state panel">
-      <div style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(16,185,129,0.15);border-top-color:var(--accent);animation:spin 700ms linear infinite;"></div>
-      <strong>Loading skill...</strong>
-    </div>
+    <!--
+      Skeletons during initial load: replace the spinner-only block with
+      structural placeholders that mirror the metadata grid + content body
+      so the layout doesn't jump when the real data arrives.
+    -->
+    <template v-if="store.state.detailLoading && !detail">
+      <div class="panel detail-skeleton-grid">
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+        <Skeleton variant="row" />
+      </div>
+      <div class="panel" style="padding:18px;display:grid;gap:10px;">
+        <div class="skeleton-pill" style="width:30%;height:12px;border-radius:6px;"></div>
+        <div class="skeleton-pill" style="width:90%;height:14px;border-radius:6px;"></div>
+        <div class="skeleton-pill" style="width:80%;height:14px;border-radius:6px;"></div>
+        <div class="skeleton-pill" style="width:60%;height:14px;border-radius:6px;"></div>
+        <div class="skeleton-pill" style="width:75%;height:14px;border-radius:6px;"></div>
+      </div>
+    </template>
 
     <template v-else-if="detail">
 
@@ -197,8 +240,26 @@ const relatedSkills = computed<CatalogSkill[]>(() => {
         <article v-else class="markdown-body" v-html="detail.instructionsHtml"></article>
       </div>
 
+      <!--
+        Related skills skeleton while the catalog is still loading (relatedSkills
+        is computed off the catalog response, so an empty array could mean
+        "loading" OR "no matches"). We only show the skeleton when the catalog
+        itself hasn't resolved yet AND we already have a detail to compare to.
+      -->
+      <div v-if="relatedSkills.length === 0 && store.state.catalog === null" class="panel">
+        <div class="panel-head">
+          <div class="panel-head-title">
+            <p class="eyebrow">You might also like</p>
+            <h2>Related skills</h2>
+          </div>
+        </div>
+        <div class="related-grid">
+          <Skeleton v-for="n in 4" :key="`related-skel-${n}`" variant="card" />
+        </div>
+      </div>
+
       <!-- Related skills (by shared tags / category) -->
-      <div v-if="relatedSkills.length > 0" class="panel">
+      <div v-else-if="relatedSkills.length > 0" class="panel">
         <div class="panel-head">
           <div class="panel-head-title">
             <p class="eyebrow">You might also like</p>
@@ -305,5 +366,74 @@ const relatedSkills = computed<CatalogSkill[]>(() => {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 2px;
+}
+
+/* Breadcrumbs */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.breadcrumb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.breadcrumb-link:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.breadcrumb-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.breadcrumb-sep {
+  color: var(--text-dim);
+  user-select: none;
+}
+.breadcrumb-segment {
+  text-transform: capitalize;
+  color: var(--text-muted);
+}
+.breadcrumb-current {
+  color: var(--text);
+  font-weight: 500;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Skeleton block used when the metadata grid is still loading. */
+.detail-skeleton-grid {
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+/* Reused shimmer-pill from Skeleton.vue for inline placeholders in this page. */
+.skeleton-pill {
+  background: linear-gradient(
+    90deg,
+    rgba(63, 63, 70, 0.45) 0%,
+    rgba(82, 82, 91, 0.65) 50%,
+    rgba(63, 63, 70, 0.45) 100%
+  );
+  background-size: 200% 100%;
+  animation: detail-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes detail-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

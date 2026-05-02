@@ -1,5 +1,5 @@
 import type { ComputedRef, InjectionKey } from "vue";
-import { computed, inject, reactive } from "vue";
+import { computed, inject, reactive, watch } from "vue";
 import type { Router } from "vue-router";
 import { createApiClient } from "./api";
 import type {
@@ -23,6 +23,42 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const SELECTION_STORAGE_KEY = "skillex.selection";
+
+interface PersistedSelection {
+  scope: "local" | "global";
+  ids: string[];
+  anchor: string | null;
+}
+
+/**
+ * Reads the persisted selection from localStorage. Returns `null` when
+ * unavailable (SSR, private mode, or quota error).
+ */
+function readPersistedSelection(): PersistedSelection | null {
+  try {
+    const raw = window.localStorage.getItem(SELECTION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedSelection;
+    if (!parsed || !Array.isArray(parsed.ids)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedSelection(value: PersistedSelection | null): void {
+  try {
+    if (!value || value.ids.length === 0) {
+      window.localStorage.removeItem(SELECTION_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // Quota / private mode — silently degrade.
+  }
+}
+
 /** Aggregate status surfaced in the sidebar Doctor link. */
 export type DoctorStatus = "pass" | "warn" | "fail" | null;
 
@@ -42,6 +78,8 @@ export interface SkillexStore {
     busyCards: Set<string>;
     /** Skill ids the user has selected for bulk operations (install/remove). */
     selectedSkillIds: Set<string>;
+    /** Anchor id for range selection (set on every selection toggle). */
+    selectionAnchorId: string | null;
     /** Aggregate health from the most recent /api/doctor poll. */
     doctorStatus: DoctorStatus;
     notice: { tone: NoticeTone; message: string } | null;
@@ -71,6 +109,13 @@ export interface SkillexStore {
   clearNotice: () => void;
   /** Bulk selection — toggles the skill id in `state.selectedSkillIds`. */
   toggleSelectedSkill: (skillId: string) => void;
+  /**
+   * Range selection: selects every id between `selectionAnchorId` and
+   * `targetId` (inclusive) in the order of `visibleIds`. Falls back to a
+   * normal toggle when no anchor exists yet. Used by Shift+click on a
+   * second card.
+   */
+  selectRangeFromAnchor: (targetId: string, visibleIds: string[]) => void;
   /** Replaces the selection with the supplied ids. Pass [] to clear. */
   setSelectedSkills: (skillIds: string[]) => void;
   /** Convenience: clears every selected id. */
@@ -106,6 +151,7 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     busyLabel: null as string | null,
     busyCards: new Set<string>(),
     selectedSkillIds: new Set<string>(),
+    selectionAnchorId: null as string | null,
     doctorStatus: null as DoctorStatus,
     notice: null as { tone: NoticeTone; message: string } | null,
     toast: {
@@ -262,10 +308,47 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     state.initialized = true;
     await refreshAll();
     void loadDoctorStatus();
+    // Restore the persisted selection — but only the ids that still exist in
+    // the freshly-loaded catalog under the current scope. This prevents
+    // resurrecting stale ids after the user removed a source.
+    const persisted = readPersistedSelection();
+    if (persisted && persisted.scope === state.scope) {
+      const catalogIds = new Set((state.catalog?.skills ?? []).map((s) => s.id));
+      const stillValid = persisted.ids.filter((id) => catalogIds.has(id));
+      if (stillValid.length > 0) {
+        state.selectedSkillIds = new Set(stillValid);
+        if (persisted.anchor && stillValid.includes(persisted.anchor)) {
+          state.selectionAnchorId = persisted.anchor;
+        } else {
+          state.selectionAnchorId = stillValid[stillValid.length - 1] ?? null;
+        }
+      }
+    }
     if (routeSkillId) {
       await loadSkillDetail(routeSkillId);
     }
   }
+
+  // Persist selection on every change so a refresh / new tab keeps state.
+  // Skipping the write while not initialized prevents clobbering the
+  // persisted entry before `initialize()` had a chance to read it.
+  watch(
+    () => ({
+      ids: [...state.selectedSkillIds],
+      anchor: state.selectionAnchorId,
+      scope: state.scope,
+      initialized: state.initialized,
+    }),
+    (next) => {
+      if (!next.initialized) return;
+      writePersistedSelection({
+        scope: next.scope,
+        ids: next.ids,
+        anchor: next.anchor,
+      });
+    },
+    { deep: false },
+  );
 
   async function setScope(scope: InstallScope): Promise<void> {
     if (state.scope === scope) {
@@ -481,13 +564,40 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
         next.add(skillId);
       }
       state.selectedSkillIds = next;
+      // Anchor is the latest interacted id, regardless of toggle direction.
+      state.selectionAnchorId = skillId;
+    },
+    selectRangeFromAnchor(targetId: string, visibleIds: string[]) {
+      const anchor = state.selectionAnchorId;
+      if (!anchor || !visibleIds.includes(anchor) || !visibleIds.includes(targetId)) {
+        // No usable anchor (e.g. anchor scrolled out of view by a filter change):
+        // fall back to a plain toggle so Shift+click still adds the target.
+        const next = new Set(state.selectedSkillIds);
+        if (next.has(targetId)) next.delete(targetId);
+        else next.add(targetId);
+        state.selectedSkillIds = next;
+        state.selectionAnchorId = targetId;
+        return;
+      }
+      const anchorIdx = visibleIds.indexOf(anchor);
+      const targetIdx = visibleIds.indexOf(targetId);
+      const [start, end] = anchorIdx <= targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
+      const slice = visibleIds.slice(start, end + 1);
+      const next = new Set(state.selectedSkillIds);
+      for (const id of slice) next.add(id);
+      state.selectedSkillIds = next;
+      // Range select moves the anchor to the new endpoint so successive
+      // Shift+clicks extend from the latest target (matches Finder/Excel behavior).
+      state.selectionAnchorId = targetId;
     },
     setSelectedSkills(skillIds: string[]) {
       state.selectedSkillIds = new Set(skillIds);
+      state.selectionAnchorId = skillIds[skillIds.length - 1] ?? null;
     },
     clearSelection() {
-      if (state.selectedSkillIds.size === 0) return;
+      if (state.selectedSkillIds.size === 0 && state.selectionAnchorId === null) return;
       state.selectedSkillIds = new Set();
+      state.selectionAnchorId = null;
     },
     async installSelectedSkills() {
       const installedIds = new Set((state.dashboard?.installed ?? []).map((s) => s.id));

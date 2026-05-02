@@ -155,14 +155,19 @@ function onInstallAllRequested(): void {
   showInstallAll.value = true;
 }
 
-/** Esc clears any active selection (no-op when nothing is selected). */
+/**
+ * Esc clears the selection — but only when nothing else above us in the
+ * cascade consumed the event (dialogs, dropdowns, drawer). App.vue handles
+ * those higher-priority cases and calls `preventDefault` when it does.
+ */
 function onSelectionEscape(event: KeyboardEvent): void {
   if (event.key !== "Escape") return;
+  if (event.defaultPrevented) return;
   if (store.state.selectedSkillIds.size === 0) return;
-  // Don't clear selection if a confirm dialog is open or a text input is focused.
   if (showInstallAll.value || showRemoveAll.value) return;
   const target = event.target as HTMLElement | null;
   if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+  event.preventDefault();
   store.clearSelection();
 }
 
@@ -183,6 +188,15 @@ const selectionRemovableCount = computed(() => {
 
 function selectAllVisible(): void {
   store.setSelectedSkills(visibleSkills.value.map((s) => s.id));
+}
+
+/**
+ * Shift+click on a card → range select from the current anchor to the target,
+ * walking the *currently visible* id list (so filters / grouping respect the
+ * user's intent).
+ */
+function handleSelectRange(skillId: string): void {
+  store.selectRangeFromAnchor(skillId, visibleSkills.value.map((s) => s.id));
 }
 
 async function handleInstallSelected(): Promise<void> {
@@ -275,7 +289,7 @@ onUnmounted(() => {
 
       <!-- Shift+click hint: surfaces the bulk-select gesture for first-time users. -->
       <p v-if="!isInitialLoading && totalSkills > 0 && selectedCount === 0" class="bulk-select-hint">
-        <kbd>Shift</kbd> + click any card to start a multi-select.
+        <kbd>Shift</kbd> + click any card to start a multi-select. Hold <kbd>Shift</kbd> on a second card to select the range between them.
       </p>
 
       <!-- Stats row -->
@@ -450,6 +464,7 @@ onUnmounted(() => {
             :on-open="store.navigateToSkill"
             :on-install="store.installSkill"
             :on-remove="store.removeSkill"
+            :on-select-range="handleSelectRange"
           />
         </div>
       </template>

@@ -9,6 +9,12 @@ const props = defineProps<{
   onOpen: (skillId: string) => void;
   onInstall: (skill: CatalogSkill) => Promise<void>;
   onRemove: (skillId: string) => Promise<void>;
+  /**
+   * Called when the user Shift+clicks the card. The parent injects the
+   * current visible-id ordering so the store can compute the range from the
+   * selection anchor. When omitted, Shift+click degrades to a plain toggle.
+   */
+  onSelectRange?: (skillId: string) => void;
   /** When true, the resolved category came from regex inference (no explicit declaration). */
   inferredCategory?: boolean;
   /** Resolved category id (lowercase). Optional; only used for the inferred chip context. */
@@ -32,15 +38,23 @@ const inSelectionMode = computed(() => store.state.selectedSkillIds.size > 0);
 
 /**
  * Card click handler:
- *   - Shift+click  → toggle selection (always; even when selection is empty,
- *                     this enters selection mode).
+ *   - Shift+click  → range select via the parent callback (which knows the
+ *                     ordered visible-id list). Falls back to a plain toggle
+ *                     when no `onSelectRange` was provided.
  *   - Plain click  → in selection mode, toggle selection. Otherwise navigate
  *                     to the skill detail page (existing behavior).
  */
 function handleCardClick(event: MouseEvent) {
   if (event.shiftKey) {
     event.preventDefault();
-    store.toggleSelectedSkill(props.skill.id);
+    // Browsers select text on Shift+click. Wipe that side-effect so the user's
+    // intent is selection, not a stray text selection trail.
+    window.getSelection()?.removeAllRanges();
+    if (props.onSelectRange) {
+      props.onSelectRange(props.skill.id);
+    } else {
+      store.toggleSelectedSkill(props.skill.id);
+    }
     return;
   }
   if (inSelectionMode.value) {

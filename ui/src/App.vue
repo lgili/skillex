@@ -61,9 +61,27 @@ async function broadcastInstallAll(): Promise<void> {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape" && drawerOpen.value) {
-    drawerOpen.value = false;
-    return;
+  // Esc cascade. Handled in priority order; the first match consumes the
+  // event (preventDefault) so child handlers (e.g. CatalogPage's selection
+  // clear) only see Esc when nothing higher in the stack used it.
+  //
+  // Priority (highest first):
+  //   1. Open ConfirmDialog — handled inside the dialog itself.
+  //   2. Compact adapter dropdown.
+  //   3. Mobile drawer.
+  //   (4. CatalogPage selection — lives on its own listener and checks
+  //       event.defaultPrevented before clearing.)
+  if (event.key === "Escape" && !event.defaultPrevented) {
+    if (adapterDropdownOpen.value) {
+      event.preventDefault();
+      adapterDropdownOpen.value = false;
+      return;
+    }
+    if (drawerOpen.value) {
+      event.preventDefault();
+      drawerOpen.value = false;
+      return;
+    }
   }
   // Cmd+K (Mac) or Ctrl+K (other) focuses the search input.
   if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "k") {
