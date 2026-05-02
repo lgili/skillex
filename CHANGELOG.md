@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`npm run dev`** — one-command dev orchestrator (`scripts/dev.mjs`). Spawns the Skillex backend with `--no-open --port 4174`, parses the token from the first `Skillex Web UI running at <url>` line, spawns the Vite dev server on port 4175 with `VITE_SKILLEX_BACKEND` pre-wired, and opens the browser at `http://127.0.0.1:4175?token=<token>` automatically. Ctrl+C cleanly tears both processes down.
+- New convenience npm scripts:
+  - `npm run dev` — full dev loop (above)
+  - `npm run web` — alias for `npm run build && node ./bin/skillex.js ui`
+  - `npm run tui` — open the interactive terminal browser
+  - `npm run skillex -- <args>` — run any CLI command without typing `node ./bin/skillex.js`
+- `skillex ui` gains `--host`, `--port`, and `--no-open` flags so the dev orchestrator (and any other automation) can run the backend on a known port without auto-opening the browser.
+- Env vars to override the dev orchestrator: `SKILLEX_DEV_BACKEND_PORT`, `SKILLEX_DEV_VITE_PORT`, `SKILLEX_DEV_NO_OPEN=1`.
+
 ### Fixed
 - **Web UI dev mode (`npm run dev:ui`)** no longer throws `Missing Skillex Web UI bootstrap payload` and a blank page. When no bootstrap is injected (Vite serves `index.html` directly without the backend's substitution), an in-page overlay now explains exactly how to wire the dev server to a running `skillex ui` backend.
 - The dev page can also recover the bootstrap from a query string (e.g. `http://127.0.0.1:4174?token=<token>&scope=local`); the token is cached in `localStorage` so subsequent reloads work.
 
-### Added
-- `vite.config.ts` now reads a new `VITE_SKILLEX_BACKEND` env var. When set (e.g. `VITE_SKILLEX_BACKEND=http://127.0.0.1:54321 npm run dev:ui`), the Vite dev server proxies `/api/*` to that backend so the UI talks to a real `skillex ui` instance with HMR enabled.
-- README "Local Web UI development" section rewritten with two flows: production-style (`npm run build && skillex ui`) and hot-reload (`VITE_SKILLEX_BACKEND=… npm run dev:ui`).
+### Changed
+- `vite.config.ts` reads a new `VITE_SKILLEX_BACKEND` env var. When set, the Vite dev server proxies `/api/*` to that backend so the UI talks to a real `skillex ui` instance with HMR enabled. The new `npm run dev` script sets this automatically.
+- README "Local Web UI development" rewritten: `npm run dev` is now the primary workflow; production-style (`npm run web`) is documented as a single one-liner.
 
 ## [0.4.0] - 2026-05-02
 

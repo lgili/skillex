@@ -94,36 +94,37 @@ npx skillex <command>
 
 When working on the repository itself, the browser UI is a standalone Vue 3 + Vite frontend under `ui/`. The CLI serves the built assets from `dist-ui/` and keeps all install/remove/update/sync logic in the local TypeScript backend.
 
-**Production-style local run** — builds the UI, builds the backend, and serves the bundled output exactly like an end user gets via `npx skillex ui`:
+**One-command dev mode** — `npm run dev` spawns the backend, the Vite dev server with `/api/*` proxied, and opens the browser with the right token. Edit a `.vue` file and HMR reloads instantly.
 
 ```bash
 npm install
-npm run build       # builds dist-ui + dist
-node ./bin/skillex.js ui
+npm run dev
+# ➜ Backend: http://127.0.0.1:4174  (token captured automatically)
+# ➜ UI:      http://127.0.0.1:4175  (opens in your browser)
 ```
 
-**Hot-reload UI development** — Vite dev server with HMR. The UI talks to a separate `skillex ui` instance via the Vite proxy.
+Override the ports if you need to:
 
-1. **Terminal A** — start the backend so the UI has real data:
+```bash
+SKILLEX_DEV_BACKEND_PORT=5000 SKILLEX_DEV_VITE_PORT=5001 npm run dev
+SKILLEX_DEV_NO_OPEN=1 npm run dev   # keep the URL on stdout, don't open
+```
 
-   ```bash
-   node ./bin/skillex.js ui
-   # ➜ http://127.0.0.1:54321?token=<token>
-   ```
+**Production-style local run** — builds everything and serves it exactly like an end user gets via `npx skillex ui`:
 
-2. **Terminal B** — start the Vite dev server pointing at that backend:
+```bash
+npm run web   # alias for `npm run build && node ./bin/skillex.js ui`
+```
 
-   ```bash
-   VITE_SKILLEX_BACKEND=http://127.0.0.1:54321 npm run dev:ui
-   ```
+**Other handy aliases:**
 
-3. **Browser** — open the Vite dev server with the same token (one time only; it's cached in `localStorage` afterwards):
-
-   ```text
-   http://127.0.0.1:4174?token=<token>
-   ```
-
-If you forget step 3 or skip step 2, the dev page renders an in-app overlay with these instructions instead of throwing.
+| Command | What it does |
+|---|---|
+| `npm run dev` | Backend + Vite + auto-open (full HMR loop) |
+| `npm run web` | Production-style: build + run the local Web UI server |
+| `npm run tui` | Open the interactive terminal browser |
+| `npm run skillex -- <args>` | Run any CLI command without `node ./bin/skillex.js` (e.g. `npm run skillex -- list`) |
+| `npm run dev:ui` | Vite dev server only (advanced; needs `VITE_SKILLEX_BACKEND=…` env var pointing at a running backend) |
 
 ---
 

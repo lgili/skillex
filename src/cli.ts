@@ -54,6 +54,8 @@ const STRING_FLAGS = new Set<string>([
   "skills-dir",
   "label",
   "timeout",
+  "host",
+  "port",
 ]);
 
 /** Flags that are pure booleans (presence = true; supports `--name=value` parsing too). */
@@ -72,6 +74,7 @@ const BOOLEAN_FLAGS = new Set<string>([
   "exit-code",
   "raw",
   "install-recommended",
+  "no-open",
 ]);
 
 /** Union of all flags the parser accepts anywhere in the CLI. */
@@ -267,10 +270,14 @@ Options:
   --scope <scope>       local or global (default: local)
   --global              Shortcut for --scope global
   --no-cache            Bypass local catalog cache
+  --host <host>         Bind address (default: 127.0.0.1; loopback only)
+  --port <number>       Listen port (default: pick a free port)
+  --no-open             Do not open the system browser; just print the URL
 
 Example:
   skillex ui
-  skillex ui --global`,
+  skillex ui --global
+  skillex ui --port 4173 --no-open    # for the dev orchestrator`,
 
   status: `Usage: skillex status [options]
 
@@ -781,10 +788,20 @@ async function handleBrowse(flags: CliFlags, userConfig: UserConfig): Promise<vo
 
 async function handleWebUi(flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const options = commonOptions(flags, userConfig);
-  const session = await startWebUiServer(options);
+  const host = asOptionalString(flags.host);
+  const portRaw = asOptionalString(flags.port);
+  const port = portRaw !== undefined ? parsePositiveInt(portRaw) : undefined;
+  const noOpen = parseBooleanFlag(flags["no-open"], "no-open") ?? false;
+
+  const session = await startWebUiServer({
+    ...options,
+    ...(host ? { host } : {}),
+    ...(port !== undefined ? { port } : {}),
+    autoOpen: !noOpen,
+  });
 
   output.success(`Skillex Web UI running at ${session.url}`);
-  if (!session.opened) {
+  if (!noOpen && !session.opened) {
     output.warn("Could not open the browser automatically. Open the URL above manually.");
   }
   output.info("Press Ctrl+C to stop the local server.");
