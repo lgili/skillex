@@ -14,6 +14,8 @@ const store = useSkillexStore();
 const selectedCategory = ref("all");
 /** When true, restrict the grid to the user's installed skills. */
 const installedOnly = ref(false);
+/** When true, the grid is grouped by source.repo. */
+const groupBySource = ref(false);
 
 const showInstallAll = ref(false);
 const showRemoveAll = ref(false);
@@ -83,6 +85,32 @@ const visibleSkills = computed(() => {
 
 /** True when the catalog response has not been fetched yet (first load). */
 const isInitialLoading = computed(() => store.state.catalog === null);
+
+/**
+ * Buckets `visibleSkills` by their source repo when `groupBySource` is on.
+ * Each bucket carries the source label (or repo) and the skills in their
+ * existing alphabetic order.
+ */
+const groupedSkills = computed(() => {
+  if (!groupBySource.value) {
+    return [{ key: "_all", label: "", repo: "", skills: visibleSkills.value }];
+  }
+  const buckets = new Map<string, { key: string; label: string; repo: string; skills: CatalogSkill[] }>();
+  for (const skill of visibleSkills.value) {
+    const key = `${skill.source.repo}@${skill.source.ref}`;
+    const label = skill.source.label || skill.source.repo;
+    if (!buckets.has(key)) {
+      buckets.set(key, { key, label, repo: skill.source.repo, skills: [] });
+    }
+    buckets.get(key)!.skills.push(skill);
+  }
+  return [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label));
+});
+
+/** True when there is more than one configured source (so grouping is meaningful). */
+const canGroupBySource = computed(
+  () => (store.state.catalog?.sources?.length ?? 0) > 1,
+);
 
 /** True when the catalog has loaded but the workspace has zero skills installed. */
 const isFreshWorkspace = computed(
@@ -215,7 +243,7 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
         </article>
       </div>
 
-      <!-- Category pills -->
+      <!-- Category pills + group toggle -->
       <div class="category-pills">
         <button
           v-for="cat in CATEGORIES"
@@ -230,6 +258,23 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
           <span v-if="cat.id !== 'all'" class="category-pill-count">
             {{ categoryCount(cat.id) }}
           </span>
+        </button>
+
+        <!-- Group-by-source toggle: only useful when 2+ sources are configured. -->
+        <button
+          v-if="canGroupBySource"
+          class="category-pill group-toggle"
+          :class="{ active: groupBySource }"
+          type="button"
+          :aria-pressed="groupBySource"
+          :title="groupBySource ? 'Click to flatten the grid' : 'Group skills by their catalog source'"
+          @click="groupBySource = !groupBySource"
+        >
+          <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h16M4 12h16M4 18h7" />
+          </svg>
+          Group by source
         </button>
       </div>
     </div>
@@ -279,19 +324,31 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
       </p>
     </div>
 
-    <!-- ── Skill grid ─────────────────────────────────────────────────────── -->
-    <div v-else class="catalog-grid">
-      <SkillCard
-        v-for="skill in visibleSkills"
-        :key="skill.id"
-        :skill="skill"
-        :inferred-category="resolveCategory(skill).inferred"
-        :resolved-category-id="resolveCategory(skill).id"
-        :on-open="store.navigateToSkill"
-        :on-install="store.installSkill"
-        :on-remove="store.removeSkill"
-      />
-    </div>
+    <!-- ── Skill grid (flat or grouped) ───────────────────────────────────── -->
+    <template v-else>
+      <template v-for="bucket in groupedSkills" :key="bucket.key">
+        <!-- Group heading: rendered only when grouping is on AND we have a label. -->
+        <div v-if="groupBySource && bucket.label" class="source-group-head">
+          <span class="source-group-icon" aria-hidden="true">📦</span>
+          <strong>{{ bucket.label }}</strong>
+          <code v-if="bucket.label !== bucket.repo" class="source-group-repo">{{ bucket.repo }}</code>
+          <span class="source-group-count">{{ bucket.skills.length }} skill(s)</span>
+        </div>
+
+        <div class="catalog-grid">
+          <SkillCard
+            v-for="skill in bucket.skills"
+            :key="`${bucket.key}-${skill.id}`"
+            :skill="skill"
+            :inferred-category="resolveCategory(skill).inferred"
+            :resolved-category-id="resolveCategory(skill).id"
+            :on-open="store.navigateToSkill"
+            :on-install="store.installSkill"
+            :on-remove="store.removeSkill"
+          />
+        </div>
+      </template>
+    </template>
 
     <!-- Confirmation dialogs -->
     <ConfirmDialog
@@ -421,6 +478,42 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
   cursor: pointer;
 }
 .link-button:hover { color: var(--accent-hover); }
+
+.group-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 4px 8px;
+  border-bottom: 1px solid var(--line);
+  margin-top: 8px;
+}
+.source-group-head strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.source-group-icon {
+  font-size: 1.05rem;
+}
+.source-group-repo {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(39, 39, 42, 0.5);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.source-group-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 
 @media (max-width: 680px) {
   .onboarding-card {

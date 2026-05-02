@@ -83,6 +83,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 const ADAPTERS = [
+  { value: "all",      label: "All detected", icon: "✨" },
   { value: "claude",   label: "Claude",   icon: "🤖" },
   { value: "cursor",   label: "Cursor",   icon: "⚡" },
   { value: "copilot",  label: "Copilot",  icon: "🐙" },
@@ -92,10 +93,29 @@ const ADAPTERS = [
   { value: "windsurf", label: "Windsurf", icon: "🏄" },
 ];
 
+/** Adapters that exclude the "all" sentinel (used for the icon row). */
+const ADAPTER_OPTIONS = ADAPTERS.filter((a) => a.value !== "all");
+
 const activeAdapterInfo = computed(() => {
   const id = store.state.syncAdapter;
   return ADAPTERS.find(a => a.value === id) ?? { value: id, label: id || "Auto", icon: "🔧" };
 });
+
+/** Adapter selection in the topbar (compact dropdown for narrow viewports). */
+const adapterDropdownOpen = ref(false);
+function toggleAdapterDropdown() {
+  adapterDropdownOpen.value = !adapterDropdownOpen.value;
+}
+function selectAdapter(value: string) {
+  store.setSyncAdapter(value);
+  adapterDropdownOpen.value = false;
+}
+function onDocumentClick(event: MouseEvent) {
+  if (!adapterDropdownOpen.value) return;
+  const target = event.target as HTMLElement | null;
+  if (target && target.closest(".adapter-dropdown")) return;
+  adapterDropdownOpen.value = false;
+}
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -125,10 +145,12 @@ onMounted(async () => {
   const routeSkillId = typeof route.params.skillId === "string" ? route.params.skillId : null;
   await store.initialize(routeSkillId);
   window.addEventListener("keydown", onKeydown);
+  document.addEventListener("click", onDocumentClick);
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKeydown);
+  document.removeEventListener("click", onDocumentClick);
 });
 
 // Close the mobile drawer whenever navigation happens.
@@ -346,10 +368,10 @@ watch(
 
         <div class="topbar-divider"></div>
 
-        <!-- Adapter toggle -->
-        <div class="toggle-group">
+        <!-- Adapter toggle: icon row on wide viewports, dropdown on narrow. -->
+        <div class="toggle-group adapter-toggle-row">
           <button
-            v-for="a in ADAPTERS"
+            v-for="a in ADAPTER_OPTIONS"
             :key="a.value"
             class="adapter-toggle-btn"
             :class="{ active: store.state.syncAdapter === a.value }"
@@ -359,6 +381,44 @@ watch(
           >
             {{ a.icon }}
           </button>
+        </div>
+
+        <!-- Compact adapter dropdown (visible <1100px). -->
+        <div class="adapter-dropdown">
+          <button
+            class="button button-ghost adapter-dropdown-trigger"
+            type="button"
+            :aria-expanded="adapterDropdownOpen"
+            aria-haspopup="listbox"
+            @click.stop="toggleAdapterDropdown"
+          >
+            <span aria-hidden="true">{{ activeAdapterInfo.icon }}</span>
+            <span>{{ activeAdapterInfo.label }}</span>
+            <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div v-if="adapterDropdownOpen" class="adapter-dropdown-menu" role="listbox">
+            <button
+              v-for="a in ADAPTERS"
+              :key="`dd-${a.value}`"
+              type="button"
+              role="option"
+              :aria-selected="store.state.syncAdapter === a.value"
+              class="adapter-dropdown-item"
+              :class="{ active: store.state.syncAdapter === a.value }"
+              @click="selectAdapter(a.value)"
+            >
+              <span aria-hidden="true">{{ a.icon }}</span>
+              <span>{{ a.label }}</span>
+              <svg
+                v-if="store.state.syncAdapter === a.value"
+                width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div class="topbar-divider"></div>

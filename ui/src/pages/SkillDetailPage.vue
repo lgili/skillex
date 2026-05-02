@@ -2,6 +2,7 @@
 import { computed, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useSkillexStore } from "../store";
+import type { CatalogSkill } from "../types";
 
 const route  = useRoute();
 const store  = useSkillexStore();
@@ -16,6 +17,39 @@ async function loadCurrentSkill() {
 
 watch(skillId, () => void loadCurrentSkill());
 onMounted(() => void loadCurrentSkill());
+
+/**
+ * Computes up to 4 catalog skills that share the most tags with the current
+ * skill (or the same category, weighted lower). The current skill is always
+ * excluded. Returns an empty array when the catalog has not loaded yet.
+ */
+const relatedSkills = computed<CatalogSkill[]>(() => {
+  const current = detail.value?.skill;
+  if (!current) return [];
+  const all = store.state.catalog?.skills ?? [];
+  if (all.length === 0) return [];
+
+  const currentTags = new Set(current.tags.map((t) => t.toLowerCase()));
+  const currentCategory = current.category?.trim().toLowerCase();
+
+  // Score: shared-tag count + 0.5 if the explicit category matches.
+  const ranked = all
+    .filter((s) => s.id !== current.id)
+    .map((s) => {
+      const tagOverlap = s.tags.reduce(
+        (n, tag) => n + (currentTags.has(tag.toLowerCase()) ? 1 : 0),
+        0,
+      );
+      const sameCategory =
+        currentCategory && s.category?.trim().toLowerCase() === currentCategory ? 0.5 : 0;
+      return { skill: s, score: tagOverlap + sameCategory };
+    })
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4);
+
+  return ranked.map((r) => r.skill);
+});
 </script>
 
 <template>
@@ -163,7 +197,113 @@ onMounted(() => void loadCurrentSkill());
         <article v-else class="markdown-body" v-html="detail.instructionsHtml"></article>
       </div>
 
+      <!-- Related skills (by shared tags / category) -->
+      <div v-if="relatedSkills.length > 0" class="panel">
+        <div class="panel-head">
+          <div class="panel-head-title">
+            <p class="eyebrow">You might also like</p>
+            <h2>Related skills</h2>
+            <p>Suggested by shared tags{{ detail.skill.category ? ' and category' : '' }}.</p>
+          </div>
+        </div>
+        <div class="related-grid">
+          <button
+            v-for="related in relatedSkills"
+            :key="related.id"
+            class="related-card"
+            type="button"
+            :title="related.description"
+            @click="store.navigateToSkill(related.id)"
+          >
+            <div class="related-card-head">
+              <strong>{{ related.name }}</strong>
+              <span v-if="related.installed" class="related-installed-mark" aria-label="Installed">✓</span>
+            </div>
+            <p>{{ related.description }}</p>
+            <div class="related-card-tags">
+              <span v-for="tag in related.tags.slice(0, 3)" :key="tag" class="chip" style="height:18px;font-size:9px;padding:0 6px;">
+                {{ tag }}
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
+
     </template>
 
   </section>
 </template>
+
+<style scoped>
+.related-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+
+.related-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(24, 24, 27, 0.55);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms, background 150ms, transform 150ms;
+}
+.related-card:hover {
+  border-color: var(--accent-ring);
+  background: rgba(39, 39, 42, 0.7);
+  transform: translateY(-1px);
+}
+.related-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.related-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.related-card-head strong {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.related-installed-mark {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.related-card p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.related-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+</style>

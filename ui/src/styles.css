@@ -1306,6 +1306,61 @@ body::before {
 ::-webkit-scrollbar-thumb { background: rgba(63,63,70,0.6); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(82,82,91,0.8); }
 
+/* ─── Adapter dropdown (compact topbar control) ─────────────────────────── */
+.adapter-dropdown {
+  position: relative;
+  display: none; /* hidden by default; shown on narrow viewports via media query */
+}
+
+.adapter-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  height: 30px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.adapter-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 50;
+}
+
+.adapter-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 120ms, color 120ms;
+}
+.adapter-dropdown-item:hover { background: var(--bg-hover); color: var(--text); }
+.adapter-dropdown-item.active { background: var(--accent-soft); color: var(--accent); }
+.adapter-dropdown-item svg { margin-left: auto; }
+
+@media (max-width: 1100px) {
+  .adapter-toggle-row { display: none; }
+  .adapter-dropdown { display: inline-flex; }
+}
+
 /* ─── Doctor status dot in the sidebar ──────────────────────────────────── */
 .doctor-status-dot {
   display: inline-block;
