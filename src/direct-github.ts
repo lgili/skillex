@@ -143,7 +143,7 @@ export async function fetchDirectGitHubSkill(reference: DirectGitHubRef): Promis
       id: normalizeRepoSkillId(reference.repo),
       name: frontmatter.name || toTitleCase(reference.repo),
       version: "0.1.0",
-      description: frontmatter.description || `Skill instalada diretamente de ${repoId}.`,
+      description: frontmatter.description || `Skill installed directly from ${repoId}.`,
       author: reference.owner,
       tags: [],
       compatibility: [],
@@ -193,7 +193,7 @@ export function normalizeDirectManifest(
     id: manifest.id || normalizeRepoSkillId(reference.repo),
     name: manifest.name || toTitleCase(reference.repo),
     version: manifest.version || "0.1.0",
-    description: manifest.description || `Skill instalada diretamente de ${reference.owner}/${reference.repo}.`,
+    description: manifest.description || `Skill installed directly from ${reference.owner}/${reference.repo}.`,
     author: manifest.author || reference.owner,
     tags: Array.isArray(manifest.tags) ? manifest.tags : [],
     compatibility: Array.isArray(manifest.compatibility) ? manifest.compatibility : [],
@@ -216,10 +216,10 @@ export async function confirmDirectInstall(
   const warning = `Warning: ${skillRef} will be installed directly from GitHub and has not been verified by the active catalog.`;
   (options.warn || console.error)(warning);
 
-  const confirm = options.confirm || (() => confirmAction("Continuar com a instalacao direta?"));
+  const confirm = options.confirm || (() => confirmAction("Continue with the direct install?"));
   const accepted = await confirm();
   if (!accepted) {
-    throw new InstallError("Instalacao direta cancelada pelo usuario.", "INSTALL_CANCELLED");
+    throw new InstallError("Direct install cancelled by user.", "INSTALL_CANCELLED");
   }
 }
 

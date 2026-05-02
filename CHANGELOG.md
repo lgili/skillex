@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `toLockfileSource` boolean expression no longer contains a duplicated `(label || repo === DEFAULT_REPO)` test (copy-paste artifact); behavior unchanged.
+- All remaining Portuguese user-facing strings translated to English: TUI prompt label, sync symlink-fallback warnings, runner errors, direct-install confirmation, confirm prompt for non-TTY terminals, filesystem path errors, and Web UI labels (sidebar, catalog page, skill card buttons, detail page).
+- Sync warnings now route through `output.warn` instead of bare `console.error` so they respect color/stream conventions.
+- New `scripts/check-language.mjs` regression guard runs as part of `npm test` and fails CI if banned Portuguese tokens reappear in `src/**/*.ts` or `ui/src/**/*.{vue,ts}` without an explicit `i18n-allow:` annotation.
 
 ## [0.3.1] - 2026-04-08
 

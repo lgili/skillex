@@ -25,7 +25,7 @@ interface RunSkillOptions extends ProjectOptions {
 export function parseSkillCommandReference(value: string): { skillId: string; command: string } {
   const separatorIndex = value.indexOf(":");
   if (separatorIndex <= 0 || separatorIndex === value.length - 1) {
-    throw new CliError('Use o formato "skill-id:comando" para executar scripts.', "INVALID_RUN_REFERENCE");
+    throw new CliError('Use the format "skill-id:command" to run skill scripts.', "INVALID_RUN_REFERENCE");
   }
 
   return {
@@ -61,15 +61,15 @@ export async function runSkillScript(
   if (!lockfile) {
     throw new CliError(
       statePaths.scope === "global"
-        ? "Nenhuma instalacao global encontrada. Rode: skillex init --global --adapter <id>"
-        : "Nenhuma instalacao local encontrada. Rode: skillex init",
+        ? "No global installation found. Run: skillex init --global --adapter <id>"
+        : "No local installation found. Run: skillex init",
       "LOCKFILE_MISSING",
     );
   }
 
   const metadata = lockfile.installed?.[skillId];
   if (!metadata?.path) {
-    throw new CliError(`Skill "${skillId}" nao esta instalada.`, "SKILL_NOT_INSTALLED");
+    throw new CliError(`Skill "${skillId}" is not installed.`, "SKILL_NOT_INSTALLED");
   }
 
   const skillDir = path.isAbsolute(metadata.path) ? metadata.path : path.resolve(cwd, metadata.path);
@@ -81,17 +81,17 @@ export async function runSkillScript(
     const available = Object.keys(scripts);
     throw new CliError(
       available.length > 0
-        ? `Comando "${commandName}" nao existe para "${skillId}". Disponiveis: ${available.join(", ")}`
-        : `A skill "${skillId}" nao declara scripts executaveis.`,
+        ? `Command "${commandName}" does not exist for "${skillId}". Available: ${available.join(", ")}`
+        : `Skill "${skillId}" does not declare any executable scripts.`,
       "RUN_COMMAND_NOT_FOUND",
     );
   }
 
-  const confirm = options.confirm || (() => confirmAction(`Executar em ${skillId}: ${script}?`));
+  const confirm = options.confirm || (() => confirmAction(`Run in ${skillId}: ${script}?`));
   if (!options.yes) {
     const accepted = await confirm();
     if (!accepted) {
-      throw new CliError("Execucao cancelada pelo usuario.", "RUN_CANCELLED");
+      throw new CliError("Run cancelled by user. Pass --yes to skip the confirmation prompt.", "RUN_CANCELLED");
     }
   }
 
@@ -125,7 +125,7 @@ export async function runSkillScript(
     child.on("close", (code) => {
       clearTimeout(timeout);
       if (timedOut) {
-        stderr.write(`Tempo limite excedido (${timeoutSeconds}s).\n`);
+        stderr.write(`Timeout exceeded (${timeoutSeconds}s).\n`);
         resolve(1);
         return;
       }

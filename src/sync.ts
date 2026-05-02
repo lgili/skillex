@@ -13,6 +13,7 @@ import {
   writeText,
 } from "./fs.js";
 import { normalizeSkillContent, parseSkillFrontmatter } from "./skill.js";
+import { warn as outputWarn } from "./output.js";
 import type {
   AdapterConfig,
   InstalledSkillDocument,
@@ -106,8 +107,8 @@ export async function syncAdapterFiles(options: SyncOptions): Promise<SyncResult
           if (prepared.syncMode === "symlink") {
             const linkResult = await createLink(entry.sourcePath, entry.absoluteTargetPath);
             if (linkResult.fallback) {
-              (options.warn || console.error)(
-                `Aviso: symlink indisponivel para ${entry.targetPath}; usando copia no lugar.`,
+              (options.warn || outputWarn)(
+                `Symlink unavailable for ${entry.targetPath}; falling back to copy. Pass --mode copy to make this explicit.`,
               );
               await copyPath(entry.sourcePath, entry.absoluteTargetPath);
               finalMode = "copy";
@@ -136,8 +137,8 @@ export async function syncAdapterFiles(options: SyncOptions): Promise<SyncResult
           const linkResult = await createLink(prepared.generatedSourcePath, prepared.absoluteTargetPath);
 
           if (linkResult.fallback) {
-            (options.warn || console.error)(
-              `Aviso: symlink indisponivel para ${prepared.targetPath}; usando copia no lugar.`,
+            (options.warn || outputWarn)(
+              `Symlink unavailable for ${prepared.targetPath}; falling back to copy. Pass --mode copy to make this explicit.`,
             );
             await writeText(prepared.absoluteTargetPath, prepared.nextContent);
             await removePath(prepared.generatedSourcePath);
@@ -165,7 +166,7 @@ export async function syncAdapterFiles(options: SyncOptions): Promise<SyncResult
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new SyncError(`Falha ao sincronizar adapter ${options.adapterId}: ${message}`);
+    throw new SyncError(`Failed to sync adapter ${options.adapterId}: ${message}`);
   }
 }
 
@@ -202,7 +203,7 @@ export async function prepareSyncAdapterFiles(
   }
 
   if (!adapter.syncTarget) {
-    throw new SyncError(`Adapter ${adapter.id} nao define um alvo de sync.`, "SYNC_TARGET_MISSING");
+    throw new SyncError(`Adapter ${adapter.id} does not declare a sync target.`, "SYNC_TARGET_MISSING");
   }
 
   const body = renderInstalledSkills(options.skills);
@@ -343,7 +344,7 @@ export function renderInstalledSkills(skills: InstalledSkillDocument[]): string 
   ];
 
   if (sections.length === 0) {
-    lines.push("Nenhuma skill instalada no momento.");
+    lines.push("No skills installed yet.");
   } else {
     lines.push(sections.join("\n\n---\n\n"));
   }
@@ -475,7 +476,7 @@ function resolveAdapterTargetPath(adapter: AdapterConfig, options: Omit<SyncOpti
   }
 
   if (!adapter.syncTarget) {
-    throw new SyncError(`Adapter ${adapter.id} nao define um alvo de sync.`, "SYNC_TARGET_MISSING");
+    throw new SyncError(`Adapter ${adapter.id} does not declare a sync target.`, "SYNC_TARGET_MISSING");
   }
   return path.join(options.cwd, adapter.syncTarget);
 }
@@ -515,7 +516,7 @@ function buildManagedFileContent(adapterId: string, body: string, autoInjectBloc
     case "cline":
       return `${sections.join("\n\n")}\n`;
     default:
-      throw new SyncError(`Adapter desconhecido: ${adapterId}`, "SYNC_ADAPTER_UNKNOWN");
+      throw new SyncError(`Unknown adapter: ${adapterId}`, "SYNC_ADAPTER_UNKNOWN");
   }
 }
 

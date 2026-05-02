@@ -58,7 +58,7 @@ export async function runInteractiveUi<T extends SkillManifest & { source?: { re
 }> {
   const prompts = options.prompts || (await loadPromptAdapters());
   const query = await (prompts.input || fallbackInput)({
-    message: "Filtro das skills (Enter para mostrar tudo)",
+    message: "Filter skills (press Enter to show all)",
     default: "",
   });
   const filteredSkills = filterCatalogForUi(options.skills, query);

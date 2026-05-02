@@ -110,7 +110,7 @@ test("runSkillScript falha para comando desconhecido", async (t: TestContext) =>
         cwd,
         yes: true,
       }),
-    /Disponiveis: echo, sleep/,
+    /Available: echo, sleep/,
   );
 });
 
@@ -133,5 +133,5 @@ test("runSkillScript interrompe script apos timeout", async (t: TestContext) => 
 
   stderr.end();
   assert.equal(exitCode, 1);
-  assert.match(await stderrOutput, /Tempo limite excedido/);
+  assert.match(await stderrOutput, /Timeout exceeded/);
 });

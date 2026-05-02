@@ -11,13 +11,18 @@ import { CliError } from "./types.js";
  */
 export async function confirmAction(message: string): Promise<boolean> {
   if (!input.isTTY || !output.isTTY) {
-    throw new CliError("Confirmacao interativa indisponivel neste terminal. Use a flag correspondente.", "TTY_REQUIRED");
+    throw new CliError(
+      "Interactive confirmation is unavailable in this terminal. Use the matching CLI flag (e.g. --trust, --yes) to skip the prompt.",
+      "TTY_REQUIRED",
+    );
   }
 
   const rl = createInterface({ input, output });
   try {
     const answer = await rl.question(`${message} [y/N] `);
     const normalized = answer.trim().toLowerCase();
+    // Accept English (y/yes) and historical Portuguese (s/sim) responses to avoid
+    // breaking muscle memory for existing users.
     return normalized === "y" || normalized === "yes" || normalized === "s" || normalized === "sim";
   } finally {
     rl.close();

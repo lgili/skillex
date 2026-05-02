@@ -71,7 +71,7 @@
     "typecheck:ui": "vue-tsc --noEmit -p ui/tsconfig.app.json",
     "dev:ui": "vite --config ui/vite.config.ts",
     "start": "npm run build && node ./bin/skillex.js",
-    "test": "npm run build:ui && npm run build:test && node --test .test-dist/test/*.test.js",
+    "test": "node scripts/check-language.mjs && npm run build:ui && npm run build:test && node --test .test-dist/test/*.test.js",
     "prepublishOnly": "npm run build && npm test"
   },
   "engines": {

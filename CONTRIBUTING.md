@@ -101,6 +101,13 @@ npm run typecheck
 
 5. For non-trivial changes, consider opening an issue first to discuss the approach.
 
+### Language conventions
+
+- All user-facing strings (CLI output, error messages, Web UI labels) MUST be in English. Internal identifiers, JSON keys, lockfile fields, and code comments may stay as needed.
+- Route every user-visible message through the `output.*` helpers in `src/output.ts` (`info`, `success`, `warn`, `error`, `debug`). Do not call `console.log` / `console.error` for user output outside `bin/skillex.js` and `src/output.ts`.
+- The canonical lexicon: **agent** (not "adapter" in user-facing copy — keep `--adapter` flag for compatibility), **workspace** / **user-global** (not "local" / "global" in headlines), **catalog source** then just **source**.
+- A regression check (`scripts/check-language.mjs`, run as part of `npm test`) scans for common Portuguese tokens and fails CI on any unannotated hit. To opt out, add a trailing comment `// i18n-allow: <reason>` (or the HTML equivalent inside .vue files).
+
 ### Project Structure
 
 ```

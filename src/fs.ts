@@ -242,7 +242,7 @@ export async function readSymlink(linkPath: string): Promise<string | null> {
  */
 export function assertSafeRelativePath(relativePath: string): string {
   if (!relativePath || relativePath.includes("\0")) {
-    throw new ValidationError(`Caminho invalido: "${relativePath}"`);
+    throw new ValidationError(`Invalid path: "${relativePath}"`);
   }
 
   const normalized = path.posix.normalize(relativePath);
@@ -252,7 +252,7 @@ export function assertSafeRelativePath(relativePath: string): string {
     path.isAbsolute(relativePath) ||
     normalized.startsWith("/")
   ) {
-    throw new ValidationError(`Caminho inseguro detectado: "${relativePath}"`);
+    throw new ValidationError(`Unsafe path detected: "${relativePath}"`);
   }
 
   return normalized;

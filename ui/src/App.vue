@@ -82,7 +82,7 @@ onMounted(async () => {
 
       <!-- Nav -->
       <nav class="sidebar-nav">
-        <p class="nav-section-label">Explorar</p>
+        <p class="nav-section-label">Browse</p>
 
         <button class="nav-btn" :class="{ active: $route.name === 'catalog' }"
                 type="button" @click="store.navigateHome()">
@@ -99,7 +99,7 @@ onMounted(async () => {
           <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
           </svg>
-          Instaladas
+          Installed
           <span v-if="(dashboard?.installed.length ?? 0) > 0" class="nav-badge">
             {{ dashboard?.installed.length }}
           </span>
@@ -108,7 +108,7 @@ onMounted(async () => {
         <p class="nav-section-label">Workspace</p>
 
         <p class="nav-section-label" style="font-size:9px;margin-top:8px;margin-bottom:4px;color:var(--text-dim)">
-          Adapters detectados
+          Detected adapters
         </p>
         <div style="padding: 0 10px 8px; display:flex; flex-wrap:wrap; gap:5px;">
           <span v-for="a in (dashboard?.adapters.detected ?? [])" :key="a" class="chip chip-accent" style="height:22px;font-size:10px;">
@@ -116,7 +116,7 @@ onMounted(async () => {
           </span>
           <span v-if="(dashboard?.adapters.detected.length ?? 0) === 0"
                 style="font-size:11px;color:var(--text-dim);padding:2px 0">
-            Nenhum
+            None
           </span>
         </div>
 
@@ -167,7 +167,7 @@ onMounted(async () => {
           </div>
           <p v-if="recentSyncTargets.length === 0"
              style="font-size:11px;color:var(--text-dim);padding:2px 0">
-            Nenhum sync ainda.
+            No syncs yet.
           </p>
         </div>
       </nav>
@@ -177,7 +177,7 @@ onMounted(async () => {
         <div class="adapter-badge">
           <span class="adapter-badge-icon">{{ activeAdapterInfo.icon }}</span>
           <div class="adapter-badge-info">
-            <p class="adapter-badge-label">Agente ativo</p>
+            <p class="adapter-badge-label">Active agent</p>
             <p class="adapter-badge-name">{{ activeAdapterInfo.label }}</p>
           </div>
           <span class="adapter-badge-dot"></span>
@@ -203,7 +203,7 @@ onMounted(async () => {
           <input
             :value="store.state.searchQuery"
             type="search"
-            placeholder="Buscar skills..."
+            placeholder="Search skills..."
             @input="store.setSearchQuery(($event.target as HTMLInputElement).value)"
           />
           <span class="search-kbd">⌘K</span>
@@ -295,7 +295,7 @@ onMounted(async () => {
       <div class="busy-card">
         <div class="busy-spinner"></div>
         <strong>{{ store.state.busyLabel }}</strong>
-        <span>Aguarde...</span>
+        <span>Working...</span>
       </div>
     </div>
 

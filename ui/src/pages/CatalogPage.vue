@@ -58,7 +58,7 @@ const visibleSkills = computed(() => {
         <div class="panel-head-title">
           <p class="eyebrow">Discovery</p>
           <h2>Marketplace</h2>
-          <p>Habilidades validadas para o seu agente de IA.</p>
+          <p>Skills validated for your AI agent.</p>
         </div>
       </div>
 
@@ -73,7 +73,7 @@ const visibleSkills = computed(() => {
           <strong>{{ store.state.catalog?.sources.length ?? 0 }}</strong>
         </article>
         <article class="overview-card">
-          <span>Instaladas</span>
+          <span>Installed</span>
           <strong>{{ store.state.dashboard?.installed.length ?? 0 }}</strong>
         </article>
       </div>
@@ -104,8 +104,8 @@ const visibleSkills = computed(() => {
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
               d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
       </svg>
-      <strong>Nenhuma skill encontrada</strong>
-      <p>Tente outro filtro ou adicione uma source na sidebar.</p>
+      <strong>No skills found</strong>
+      <p>Try a different filter or add a source from the sidebar.</p>
     </div>
 
     <!-- Grid -->
