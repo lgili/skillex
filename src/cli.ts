@@ -2,10 +2,9 @@ import * as path from "node:path";
 import { listAdapters } from "./adapters.js";
 import {
   buildRawGitHubUrl,
-  computeCatalogCacheKey,
-  readCatalogCache,
   searchCatalogSkills,
 } from "./catalog.js";
+import { runDoctorChecks } from "./doctor.js";
 import { fetchText } from "./http.js";
 import { DEFAULT_INSTALL_SCOPE, getScopedStatePaths } from "./config.js";
 import {
@@ -842,176 +841,39 @@ async function handleStatus(flags: CliFlags, userConfig: UserConfig): Promise<vo
 
 async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const opts = commonOptions(flags, userConfig);
-  const cwd = opts.cwd ?? process.cwd();
-  const statePaths = getScopedStatePaths(cwd, {
-    scope: opts.scope,
-    baseDir: opts.agentSkillsDir,
-  });
-
-  interface DoctorCheck {
-    name: string;
-    passed: boolean;
-    message: string;
-    hint?: string;
-  }
-
-  const checks: DoctorCheck[] = [];
-
-  // 1. Lockfile
-  const state = await getInstalledSkills(opts);
-  if (state) {
-    checks.push({ name: "lockfile", passed: true, message: `Found at ${statePaths.lockfilePath}` });
-  } else {
-    checks.push({
-      name: "lockfile",
-      passed: false,
-      message: "Lockfile not found",
-      hint: "Run: skillex init",
-    });
-  }
-
-  // 2. Sources configured
-  const stateSources = state?.sources ?? [];
-  if (stateSources.length > 0) {
-    checks.push({
-      name: "source",
-      passed: true,
-      message: stateSources.map((source) => `${source.repo}@${source.ref}`).join(", "),
-    });
-  } else {
-    checks.push({
-      name: "source",
-      passed: false,
-      message: "No catalog source configured",
-      hint: "Run: skillex init",
-    });
-  }
-
-  // 3. Adapter detected
-  const hasAdapter = Boolean(state?.adapters?.active || (state?.adapters?.detected?.length ?? 0) > 0);
-  if (hasAdapter) {
-    const adapter = state?.adapters?.active ?? state?.adapters?.detected?.[0];
-    checks.push({ name: "adapter", passed: true, message: `Active: ${adapter}` });
-  } else {
-    checks.push({
-      name: "adapter",
-      passed: false,
-      message: "No adapter detected",
-      hint: `Use --adapter <id>. Available: ${listAdapters().map((a) => a.id).join(", ")}`,
-    });
-  }
-
-  // 4. GitHub reachable
-  try {
-    const response = await fetch("https://api.github.com", {
-      method: "HEAD",
-      headers: { "User-Agent": "skillex" },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (response.status < 500) {
-      checks.push({ name: "github", passed: true, message: "GitHub API is reachable" });
-    } else {
-      checks.push({
-        name: "github",
-        passed: false,
-        message: `GitHub returned a server error (status ${response.status})`,
-        hint: "Try again in a moment.",
-      });
-    }
-  } catch (error) {
-    const cause = (error as { cause?: { code?: string } })?.cause?.code
-      ?? (error as { code?: string })?.code
-      ?? null;
-    const message = error instanceof Error ? error.message : String(error);
-    if (cause === "EAI_AGAIN" || cause === "ENOTFOUND") {
-      checks.push({
-        name: "github",
-        passed: false,
-        message: "DNS lookup failed for api.github.com",
-        hint: `Check your network or DNS resolver. (${message})`,
-      });
-    } else if (cause === "ECONNREFUSED") {
-      checks.push({
-        name: "github",
-        passed: false,
-        message: "Connection refused by api.github.com",
-        hint: `Check your firewall or proxy. (${message})`,
-      });
-    } else if (cause === "CERT_HAS_EXPIRED" || cause === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
-      checks.push({
-        name: "github",
-        passed: false,
-        message: "TLS handshake failed",
-        hint: `Check the system clock or any TLS-intercepting proxy. (${message})`,
-      });
-    } else if (cause === "ETIMEDOUT" || (error as { name?: string })?.name === "TimeoutError") {
-      checks.push({
-        name: "github",
-        passed: false,
-        message: "Connection to api.github.com timed out",
-        hint: `Check your network connectivity. (${message})`,
-      });
-    } else {
-      checks.push({
-        name: "github",
-        passed: false,
-        message: "GitHub API is unreachable",
-        hint: `Check your internet connection or proxy settings. (${message})`,
-      });
-    }
-  }
-
-  // 5. GitHub token (warning only — never fails)
-  const token = process.env.GITHUB_TOKEN;
-  if (token) {
-    checks.push({ name: "token", passed: true, message: "GitHub token set (authenticated — 5,000 req/hr)" });
-  } else {
-    checks.push({ name: "token", passed: true, message: "No GitHub token (unauthenticated — 60 req/hr)" });
-  }
-
-  // 6. Cache
-  const cacheDir = path.join(statePaths.stateDir, ".cache");
-  if ((state?.sources?.length ?? 0) > 0) {
-    const source = await resolveProjectSource(opts);
-    const cacheKey = computeCatalogCacheKey(source);
-    const cached = await readCatalogCache(cacheDir, cacheKey);
-    if (cached) {
-      checks.push({ name: "cache", passed: true, message: "Catalog cache is fresh" });
-    } else {
-      checks.push({ name: "cache", passed: true, message: "No cached catalog (will fetch on next command)" });
-    }
-  } else {
-    checks.push({ name: "cache", passed: true, message: "Cache not checked (no repo configured)" });
-  }
-
-  const anyFailed = checks.some((c) => !c.passed);
+  const report = await runDoctorChecks(opts);
 
   if (flags.json === true) {
     const jsonResult: Record<string, { passed: boolean; message: string; hint?: string }> = {};
-    for (const check of checks) {
+    for (const check of report.checks) {
       jsonResult[check.name] = {
-        passed: check.passed,
+        passed: check.status !== "fail",
         message: check.message,
         ...(check.hint ? { hint: check.hint } : {}),
       };
     }
     output.info(JSON.stringify(jsonResult, null, 2));
   } else {
-    for (const check of checks) {
-      const symbol = check.passed ? "✓" : "✗";
+    for (const check of report.checks) {
+      const symbol = check.status === "fail" ? "✗" : check.status === "warn" ? "⚠" : "✓";
       const line = `${symbol} ${check.name.padEnd(10)} ${check.message}`;
-      if (check.passed) {
-        output.info(line);
-      } else {
+      if (check.status === "fail") {
         output.error(line);
         if (check.hint) {
           output.info(`           Hint: ${check.hint}`);
         }
+      } else if (check.status === "warn") {
+        output.warn(line);
+        if (check.hint) {
+          output.info(`           Hint: ${check.hint}`);
+        }
+      } else {
+        output.info(line);
       }
     }
   }
 
-  if (anyFailed) {
+  if (report.hasFailures) {
     process.exitCode = 1;
   }
 }

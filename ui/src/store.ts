@@ -57,6 +57,13 @@ export interface SkillexStore {
   removeSource: (repo: string) => Promise<void>;
   setSearchQuery: (query: string) => void;
   clearNotice: () => void;
+  /** Health-check report from the backend; powers the Doctor page. */
+  loadDoctor: () => Promise<{
+    scope: "local" | "global";
+    stateDir: string;
+    hasFailures: boolean;
+    checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string; hint?: string }>;
+  }>;
 }
 
 export const SKILLEX_STORE_KEY: InjectionKey<SkillexStore> = Symbol("skillex-store");
@@ -294,6 +301,9 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     },
     clearNotice() {
       state.notice = null;
+    },
+    loadDoctor() {
+      return api.getDoctor();
     },
   };
 }

@@ -52,6 +52,14 @@ export function createApiClient(options: ApiClientOptions) {
     getState() {
       return request<DashboardState>("/api/state");
     },
+    getDoctor() {
+      return request<{
+        scope: "local" | "global";
+        stateDir: string;
+        hasFailures: boolean;
+        checks: Array<{ name: string; status: "pass" | "warn" | "fail"; message: string; hint?: string }>;
+      }>("/api/doctor");
+    },
     getCatalog() {
       return request<CatalogResponse>("/api/catalog");
     },

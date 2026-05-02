@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - README example at the search section now uses the canonical `--tag <tag>` flag instead of the silently-ignored `--tags`.
+- **Web UI:** version badge in the sidebar reads the actual `package.json#version` at build time via `import.meta.env.VITE_SKILLEX_VERSION` instead of the previously hardcoded `v0.2.4` (with a tautological ternary).
+- **Web UI:** dead `⌘K` hint badge removed (no shortcut was wired). Will return when the shortcut lands.
+- **Web UI:** misleading "Oficial" badge that every skill card displayed (without any verification model) removed.
+- **Web UI:** mobile (≤680 px) sidebar no longer disappears entirely. A hamburger button now opens a slide-in drawer with the same navigation; tap the backdrop or press Esc to close, and route changes auto-close it.
+
+### Added
+- `src/doctor.ts` exports `runDoctorChecks(options): Promise<DoctorReport>` — the canonical six health checks (lockfile, source, adapter, GitHub reachability, token, cache freshness) reused by both the CLI and the Web UI.
+- **Web UI:** new `Doctor` route + sidebar entry that renders the structured `DoctorReport` returned by the new `GET /api/doctor` endpoint, mirroring the CLI's `skillex doctor`.
+- **Web UI:** skill avatars are now a deterministic CSS-only initials chip (hashed HSL background). The previous `<img>` to `dicebear.com` is gone — the UI works offline and no longer leaks page-load telemetry to a third-party host.
 
 ## [0.3.1] - 2026-04-08
 

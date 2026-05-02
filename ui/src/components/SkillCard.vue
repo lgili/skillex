@@ -57,6 +57,29 @@ function skillIcon(skill: CatalogSkill): string {
   if (id.includes("error"))   return "🐛";
   return "📦";
 }
+
+// Deterministic CSS-only avatar: initials on a hashed HSL background.
+// Replaces the previous external Dicebear image so the UI works offline and
+// does not leak page-load telemetry to a third-party host.
+function avatarInitials(skill: CatalogSkill): string {
+  const source = (skill.author || skill.source.repo).trim();
+  if (!source) return "?";
+  const parts = source.replace(/[/_-]+/g, " ").split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+  }
+  return parts[0]!.slice(0, 2).toUpperCase();
+}
+
+function avatarBackground(skill: CatalogSkill): string {
+  const source = (skill.author || skill.source.repo).trim();
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = (hash * 31 + source.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}deg 70% 35%)`;
+}
 </script>
 
 <template>
@@ -81,14 +104,6 @@ function skillIcon(skill: CatalogSkill): string {
         </div>
 
         <div class="skill-card-meta">
-          <span class="verified-badge">
-            <svg width="10" height="10" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd"
-                    d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                    clip-rule="evenodd"/>
-            </svg>
-            Oficial
-          </span>
           <span class="downloads-count">
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -136,10 +151,11 @@ function skillIcon(skill: CatalogSkill): string {
     <!-- Card footer -->
     <div class="skill-card-footer">
       <div class="skill-author">
-        <img
-          :src="`https://api.dicebear.com/7.x/avataaars/svg?seed=${skill.author || skill.source.repo}`"
-          :alt="skill.author || skill.source.repo"
-        />
+        <span
+          class="skill-author-avatar"
+          :style="{ background: avatarBackground(skill) }"
+          :aria-hidden="true"
+        >{{ avatarInitials(skill) }}</span>
         {{ skill.author || skill.source.repo }}
       </div>
 

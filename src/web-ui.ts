@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { listAdapters, resolveAdapterState } from "./adapters.js";
 import { buildRawGitHubUrl } from "./catalog.js";
 import { getScopedStatePaths } from "./config.js";
+import { runDoctorChecks } from "./doctor.js";
 import { readJson, readText } from "./fs.js";
 import { fetchText } from "./http.js";
 import {
@@ -241,6 +242,11 @@ async function handleRequest(
 
   if (method === "GET" && pathname === "/api/state") {
     sendJson(response, 200, await buildDashboardState(withRequestScope(context, url.searchParams.get("scope"))));
+    return;
+  }
+
+  if (method === "GET" && pathname === "/api/doctor") {
+    sendJson(response, 200, await runDoctorChecks(withRequestScope(context, url.searchParams.get("scope"))));
     return;
   }
 

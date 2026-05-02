@@ -3,6 +3,7 @@ import type { WebUiBootstrap } from "./types";
 
 const CatalogPage = () => import("./pages/CatalogPage.vue");
 const SkillDetailPage = () => import("./pages/SkillDetailPage.vue");
+const DoctorPage = () => import("./pages/DoctorPage.vue");
 
 export function createSkillexRouter(bootstrap: WebUiBootstrap) {
   return createRouter({
@@ -18,6 +19,11 @@ export function createSkillexRouter(bootstrap: WebUiBootstrap) {
         name: "skill-detail",
         component: SkillDetailPage,
         props: true,
+      },
+      {
+        path: "/doctor",
+        name: "doctor",
+        component: DoctorPage,
       },
     ],
     scrollBehavior() {

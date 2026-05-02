@@ -200,6 +200,20 @@ test("local Web UI exposes catalog, install, sync, and source APIs", async (t: T
   assert.equal(detail.instructionsError, null);
   assert.match(detail.instructionsHtml, /<h1>Git Master<\/h1>/);
 
+  // Doctor parity: same six checks as the CLI doctor command, structured.
+  const doctor = (await requestJson("/api/doctor", {
+    headers: { "x-skillex-token": token },
+  })).body as {
+    scope: string;
+    hasFailures: boolean;
+    checks: Array<{ name: string; status: string }>;
+  };
+  assert.equal(doctor.scope, "local");
+  assert.deepEqual(
+    doctor.checks.map((c) => c.name),
+    ["lockfile", "source", "adapter", "github", "token", "cache"],
+  );
+
   const syncResult = (await requestJson("/api/sync", {
     method: "POST",
     headers: { "x-skillex-token": token },

@@ -1,18 +1,31 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useSkillexStore } from "./store";
 
 const store = useSkillexStore();
 const route = useRoute();
+const router = useRouter();
 
 const sourceRepo  = ref("");
 const sourceRef   = ref("");
 const sourceLabel = ref("");
 
+const drawerOpen = ref(false);
+
 const dashboard         = computed(() => store.state.dashboard);
-const catalog           = computed(() => store.state.catalog);
 const recentSyncTargets = computed(() => store.recentSyncTargets.value);
+const skillexVersion    = import.meta.env.VITE_SKILLEX_VERSION;
+
+function closeDrawer() {
+  drawerOpen.value = false;
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape" && drawerOpen.value) {
+    drawerOpen.value = false;
+  }
+}
 
 const ADAPTERS = [
   { value: "claude",   label: "Claude",   icon: "🤖" },
@@ -56,11 +69,24 @@ watch(
 onMounted(async () => {
   const routeSkillId = typeof route.params.skillId === "string" ? route.params.skillId : null;
   await store.initialize(routeSkillId);
+  window.addEventListener("keydown", onKeydown);
 });
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
+
+// Close the mobile drawer whenever navigation happens.
+watch(
+  () => route.fullPath,
+  () => {
+    drawerOpen.value = false;
+  },
+);
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'drawer-open': drawerOpen }">
 
     <!-- decorative background -->
     <div class="shell-background">
@@ -68,6 +94,15 @@ onMounted(async () => {
       <div class="shell-glow shell-glow-right"></div>
       <div class="shell-grid"></div>
     </div>
+
+    <!-- Mobile-only backdrop that closes the drawer when tapped. -->
+    <button
+      v-if="drawerOpen"
+      class="mobile-drawer-backdrop"
+      type="button"
+      aria-label="Close navigation"
+      @click="closeDrawer"
+    ></button>
 
     <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
     <aside class="sidebar">
@@ -103,6 +138,19 @@ onMounted(async () => {
           <span v-if="(dashboard?.installed.length ?? 0) > 0" class="nav-badge">
             {{ dashboard?.installed.length }}
           </span>
+        </button>
+
+        <button
+          class="nav-btn"
+          type="button"
+          :class="{ active: $route.name === 'doctor' }"
+          @click="router.push({ name: 'doctor' })"
+        >
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Doctor
         </button>
 
         <p class="nav-section-label">Workspace</p>
@@ -183,7 +231,7 @@ onMounted(async () => {
           <span class="adapter-badge-dot"></span>
         </div>
         <div class="sidebar-meta">
-          <span style="font-family:monospace">v{{ catalog?.formatVersion ? `0.2.4` : `0.2.4` }}</span>
+          <span style="font-family:monospace">v{{ skillexVersion }}</span>
           <span>{{ store.state.scope }}</span>
         </div>
       </div>
@@ -194,6 +242,18 @@ onMounted(async () => {
 
       <!-- Topbar -->
       <header class="topbar">
+        <!-- Mobile hamburger (hidden on >680px via CSS) -->
+        <button
+          class="mobile-hamburger"
+          type="button"
+          aria-label="Open navigation"
+          @click="drawerOpen = !drawerOpen"
+        >
+          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+
         <!-- Search -->
         <div class="search-shell">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -206,7 +266,6 @@ onMounted(async () => {
             placeholder="Search skills..."
             @input="store.setSearchQuery(($event.target as HTMLInputElement).value)"
           />
-          <span class="search-kbd">⌘K</span>
         </div>
 
         <!-- Scope toggle -->
