@@ -1,3 +1,19 @@
+/**
+ * Install / update / remove orchestration for catalog and direct-GitHub skills.
+ *
+ * Historically this module owned every install-related concern. Lockfile
+ * shape, direct-GitHub install, auto-sync, and the shared file downloader
+ * have been extracted into focused modules. This file now contains only
+ * orchestration and re-exports the moved symbols so existing imports keep
+ * working until callers migrate to the canonical paths.
+ *
+ * Re-export shim → canonical module mapping:
+ * - lockfile shape and source-list helpers      → ./lockfile.js
+ * - direct GitHub parsing / fetch / download    → ./direct-github.js
+ * - auto-sync orchestration                     → ./auto-sync.js
+ * - shared per-file download helper             → ./downloader.js
+ */
+
 import * as path from "node:path";
 import {
   DEFAULT_AGENT_SKILLS_DIR,
@@ -6,13 +22,40 @@ import {
   DEFAULT_REPO,
   getScopedStatePaths,
 } from "./config.js";
-import { confirmAction } from "./confirm.js";
 import { ensureDir, pathExists, readJson, removePath, writeJson, writeText } from "./fs.js";
-import { fetchOptionalJson, fetchOptionalText, fetchText } from "./http.js";
 import { buildRawGitHubUrl, loadCatalog, resolveSource } from "./catalog.js";
 import { resolveAdapterState } from "./adapters.js";
 import { loadInstalledSkillDocuments, syncAdapterFiles } from "./sync.js";
-import { parseSkillFrontmatter } from "./skill.js";
+import {
+  downloadSkillFiles,
+  writeDownloadedManifest,
+  type DownloadedSkillManifest,
+} from "./downloader.js";
+import {
+  createBaseLockfile,
+  dedupeSources,
+  getLockfileSources,
+  normalizeLockfile,
+  normalizeSyncHistory,
+  parseCatalogSource,
+  PLACEHOLDER_REPOS,
+  toLockfileSource,
+} from "./lockfile.js";
+import {
+  confirmDirectInstall,
+  downloadDirectGitHubSkill,
+  fetchDirectGitHubSkill,
+  normalizeDirectManifest,
+  parseDirectGitHubRef,
+  parseGitHubSource,
+  type DirectInstallPayload,
+} from "./direct-github.js";
+import {
+  maybeAutoSync,
+  maybeSyncAfterRemove,
+  resolveSyncAdapterIds,
+  type SyncFn,
+} from "./auto-sync.js";
 import type {
   AggregatedCatalogData,
   CatalogData,
@@ -40,27 +83,44 @@ import type {
 } from "./types.js";
 import { CliError, InstallError } from "./types.js";
 
+// Re-export everything moved to focused modules so existing imports keep working.
+export {
+  createBaseLockfile,
+  dedupeSources,
+  getLockfileSources,
+  normalizeLockfile,
+  normalizeSyncHistory,
+  parseCatalogSource,
+  PLACEHOLDER_REPOS,
+  toLockfileSource,
+} from "./lockfile.js";
+export {
+  confirmDirectInstall,
+  downloadDirectGitHubSkill,
+  fetchDirectGitHubSkill,
+  normalizeDirectManifest,
+  parseDirectGitHubRef,
+  parseGitHubSource,
+} from "./direct-github.js";
+export type { DirectInstallPayload } from "./direct-github.js";
+export {
+  maybeAutoSync,
+  maybeSyncAfterRemove,
+  resolveSyncAdapterIds,
+} from "./auto-sync.js";
+export type { SyncFn } from "./auto-sync.js";
+export {
+  downloadSkillFiles,
+  writeDownloadedManifest,
+} from "./downloader.js";
+export type { DownloadedSkillManifest } from "./downloader.js";
+
 interface InstallOptions extends ProjectOptions {
   catalogLoader?: CatalogLoader;
   downloader?: SkillDownloader;
   installAll?: boolean;
   confirm?: (() => Promise<boolean>) | undefined;
   warn?: ((message: string) => void) | undefined;
-}
-
-interface DownloadedSkillManifest extends SkillManifest {
-  source: {
-    repo: string;
-    ref: string;
-    path: string;
-  };
-}
-
-interface DirectInstallPayload {
-  manifest: SkillManifest;
-  repo: string;
-  ref: string;
-  source: string;
 }
 
 /**
@@ -206,6 +266,7 @@ export async function installSkills(
         },
         options.agentSkillsDir,
       ),
+      syncInstalledSkills as SyncFn,
     );
 
     return {
@@ -314,6 +375,7 @@ export async function updateInstalledSkills(
         },
         options.agentSkillsDir,
       ),
+      syncInstalledSkills as SyncFn,
     );
 
     return {
@@ -393,6 +455,7 @@ export async function removeSkills(
         },
         options.agentSkillsDir,
       ),
+      syncInstalledSkills as SyncFn,
     );
 
     return {
@@ -703,280 +766,25 @@ export async function listProjectSources(options: ProjectOptions = {}): Promise<
   return getLockfileSources(existing, fallbackSource);
 }
 
-/**
- * Parses a direct GitHub install reference in `owner/repo[@ref]` format.
- *
- * @param input - User-supplied install argument.
- * @returns Parsed direct GitHub reference or `null` when the value is not a direct ref.
- */
-export function parseDirectGitHubRef(input: string): DirectGitHubRef | null {
-  if (!input || input.startsWith("http://") || input.startsWith("https://")) {
-    return null;
-  }
-
-  const match = input.trim().match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:@(.+))?$/);
-  if (!match) {
-    return null;
-  }
-
-  return {
-    owner: match[1]!,
-    repo: match[2]!,
-    ref: match[3] || "main",
-  };
-}
-
-function createBaseLockfile(source: CatalogSource, now: NowFn): LockfileState {
-  return {
-    formatVersion: 1,
-    createdAt: now(),
-    updatedAt: now(),
-    sources: [toLockfileSource(source)],
-    adapters: {
-      active: null,
-      detected: [],
-    },
-    settings: {
-      autoSync: true,
-    },
-    sync: null,
-    syncHistory: {},
-    syncMode: null,
-    installed: {},
-  };
-}
-
 async function downloadSkill(skill: SkillManifest, catalog: CatalogData, skillsDirPath: string): Promise<void> {
   const skillTargetDir = path.join(skillsDirPath, skill.id);
-  await removePath(skillTargetDir);
-  await ensureDir(skillTargetDir);
+  await downloadSkillFiles({
+    repo: catalog.repo,
+    ref: catalog.ref,
+    skillRelPath: skill.path,
+    files: skill.files,
+    targetDir: skillTargetDir,
+  });
 
-  for (const relativePath of skill.files) {
-    const remotePath = skill.path ? path.posix.join(skill.path, relativePath) : relativePath;
-    const rawUrl = buildRawGitHubUrl(catalog.repo, catalog.ref, remotePath);
-    const content = await fetchText(rawUrl, { headers: { Accept: "text/plain" } });
-    const localPath = path.join(skillTargetDir, relativePath);
-    await writeText(localPath, content);
-  }
-
-  await writeDownloadedManifest(skillTargetDir, {
+  const downloaded: DownloadedSkillManifest = {
     ...skill,
     source: {
       repo: catalog.repo,
       ref: catalog.ref,
       path: skill.path,
     },
-  });
-}
-
-async function downloadDirectGitHubSkill(skill: DirectInstallPayload, skillsDirPath: string): Promise<void> {
-  const skillTargetDir = path.join(skillsDirPath, skill.manifest.id);
-  await removePath(skillTargetDir);
-  await ensureDir(skillTargetDir);
-
-  for (const relativePath of skill.manifest.files) {
-    const remotePath = skill.manifest.path ? path.posix.join(skill.manifest.path, relativePath) : relativePath;
-    const rawUrl = buildRawGitHubUrl(skill.repo, skill.ref, remotePath);
-    const content = await fetchText(rawUrl, { headers: { Accept: "text/plain" } });
-    await writeText(path.join(skillTargetDir, relativePath), content);
-  }
-
-  await writeDownloadedManifest(skillTargetDir, {
-    ...skill.manifest,
-    source: {
-      repo: skill.repo,
-      ref: skill.ref,
-      path: skill.manifest.path,
-    },
-  });
-}
-
-async function writeDownloadedManifest(skillTargetDir: string, manifest: DownloadedSkillManifest): Promise<void> {
-  await writeJson(path.join(skillTargetDir, "skill.json"), manifest);
-}
-
-async function fetchDirectGitHubSkill(reference: DirectGitHubRef): Promise<DirectInstallPayload> {
-  const repoId = `${reference.owner}/${reference.repo}`;
-  const manifestUrl = buildRawGitHubUrl(repoId, reference.ref, "skill.json");
-  const manifest =
-    await fetchOptionalJson<Partial<SkillManifest> & { scripts?: Record<string, string> }>(manifestUrl, {
-      headers: { Accept: "application/json" },
-    });
-
-  if (manifest) {
-    return {
-      repo: repoId,
-      ref: reference.ref,
-      source: `github:${repoId}@${reference.ref}`,
-      manifest: normalizeDirectManifest(manifest, reference),
-    };
-  }
-
-  const skillMarkdown = await fetchOptionalText(buildRawGitHubUrl(repoId, reference.ref, "SKILL.md"), {
-    headers: { Accept: "text/plain" },
-  });
-  if (!skillMarkdown) {
-    throw new InstallError(`No skill.json or SKILL.md found at ${repoId}@${reference.ref}.`, "DIRECT_SKILL_NOT_FOUND");
-  }
-
-  const frontmatter = parseSkillFrontmatter(skillMarkdown);
-  return {
-    repo: repoId,
-    ref: reference.ref,
-    source: `github:${repoId}@${reference.ref}`,
-    manifest: {
-      id: normalizeRepoSkillId(reference.repo),
-      name: frontmatter.name || toTitleCase(reference.repo),
-      version: "0.1.0",
-      description: frontmatter.description || `Skill instalada diretamente de ${repoId}.`,
-      author: reference.owner,
-      tags: [],
-      compatibility: [],
-      entry: "SKILL.md",
-      path: "",
-      files: ["SKILL.md"],
-    },
   };
-}
-
-function normalizeDirectManifest(
-  manifest: Partial<SkillManifest> & { scripts?: Record<string, string> },
-  reference: DirectGitHubRef,
-): SkillManifest {
-  return {
-    id: manifest.id || normalizeRepoSkillId(reference.repo),
-    name: manifest.name || toTitleCase(reference.repo),
-    version: manifest.version || "0.1.0",
-    description: manifest.description || `Skill instalada diretamente de ${reference.owner}/${reference.repo}.`,
-    author: manifest.author || reference.owner,
-    tags: Array.isArray(manifest.tags) ? manifest.tags : [],
-    compatibility: Array.isArray(manifest.compatibility) ? manifest.compatibility : [],
-    entry: manifest.entry || "SKILL.md",
-    path: manifest.path || "",
-    files: Array.isArray(manifest.files) && manifest.files.length > 0 ? manifest.files : [manifest.entry || "SKILL.md"],
-    ...(manifest.scripts ? { scripts: manifest.scripts } : {}),
-  };
-}
-
-function normalizeLockfile(existing: LockfileState | null, source: CatalogSource, now: NowFn): LockfileState {
-  if (!existing) {
-    return createBaseLockfile(source, now);
-  }
-
-  const detectedAdapters = Array.isArray(existing.adapters)
-    ? existing.adapters
-    : Array.isArray(existing.adapters?.detected)
-      ? existing.adapters.detected
-      : [];
-
-  const activeAdapter = Array.isArray(existing.adapters)
-    ? existing.adapters[0] || null
-    : existing.adapters?.active || detectedAdapters[0] || null;
-
-  return {
-    formatVersion: Number(existing.formatVersion || 1),
-    createdAt: existing.createdAt || now(),
-    updatedAt: existing.updatedAt || now(),
-    sources: getLockfileSources(existing, source),
-    adapters: {
-      active: activeAdapter,
-      detected: [...new Set(detectedAdapters.filter(Boolean))],
-    },
-    settings: {
-      autoSync: existing.settings?.autoSync ?? true,
-    },
-    sync: existing.sync || null,
-    syncHistory: normalizeSyncHistory(existing),
-    syncMode: existing.syncMode || null,
-    installed: existing.installed || {},
-  };
-}
-
-function normalizeSyncHistory(existing: LockfileState | null): SyncHistory {
-  const history: SyncHistory = {};
-  const candidate =
-    existing && "syncHistory" in existing && existing.syncHistory && typeof existing.syncHistory === "object"
-      ? existing.syncHistory
-      : null;
-
-  if (candidate) {
-    for (const [adapterId, metadata] of Object.entries(candidate)) {
-      if (!metadata || typeof metadata !== "object") {
-        continue;
-      }
-      if (!("adapter" in metadata) || !("targetPath" in metadata) || !("syncedAt" in metadata)) {
-        continue;
-      }
-      history[adapterId] = metadata as SyncHistory[string];
-    }
-  }
-
-  if (existing?.sync?.adapter && !history[existing.sync.adapter]) {
-    history[existing.sync.adapter] = existing.sync;
-  }
-
-  return history;
-}
-
-/** Repos that are known placeholder values written by older versions and must be ignored. */
-const PLACEHOLDER_REPOS = new Set(["owner/repo"]);
-
-function getLockfileSources(existing: LockfileState | null, fallbackSource: CatalogSource): LockfileSource[] {
-  const legacyCatalog = getLegacyCatalog(existing);
-  const configuredSources = Array.isArray(existing?.sources)
-    ? existing.sources
-        .filter((entry): entry is LockfileSource => Boolean(entry?.repo))
-        .filter((entry) => !PLACEHOLDER_REPOS.has(entry.repo))
-        .map((entry) => ({
-          repo: entry.repo,
-          ref: entry.ref || DEFAULT_REF,
-          ...(entry.label ? { label: entry.label } : {}),
-        }))
-    : [];
-
-  if (configuredSources.length > 0) {
-    return dedupeSources(configuredSources);
-  }
-
-  if (legacyCatalog?.repo && !PLACEHOLDER_REPOS.has(legacyCatalog.repo)) {
-    return dedupeSources([
-      {
-        repo: legacyCatalog.repo,
-        ref: legacyCatalog.ref || DEFAULT_REF,
-      },
-    ]);
-  }
-
-  return [toLockfileSource(fallbackSource)];
-}
-
-function getLegacyCatalog(existing: LockfileState | null): { repo?: string; ref?: string } | null {
-  if (!existing || !("catalog" in existing)) {
-    return null;
-  }
-  const legacyState = existing as LockfileState & { catalog?: { repo?: string; ref?: string } };
-  return legacyState.catalog || null;
-}
-
-function dedupeSources(sources: LockfileSource[]): LockfileSource[] {
-  const unique = new Map<string, LockfileSource>();
-  for (const source of sources) {
-    const key = `${source.repo}@${source.ref}`;
-    if (!unique.has(key)) {
-      unique.set(key, source);
-    }
-  }
-  return [...unique.values()];
-}
-
-function toLockfileSource(source: CatalogSource, label?: string): LockfileSource {
-  return {
-    repo: source.repo,
-    ref: source.ref,
-    ...((label || source.repo === DEFAULT_REPO) && (label || source.repo === DEFAULT_REPO)
-      ? { label: label || "official" }
-      : {}),
-  };
+  await writeDownloadedManifest(skillTargetDir, downloaded);
 }
 
 function resolvePrimarySourceOverride(
@@ -1072,17 +880,6 @@ async function resolveInstalledCatalogSelection(
   return null;
 }
 
-function parseCatalogSource(source: string): LockfileSource | null {
-  const match = source.match(/^catalog:([^@]+\/[^@]+)@(.+)$/);
-  if (!match) {
-    return null;
-  }
-  return {
-    repo: match[1]!,
-    ref: match[2]!,
-  };
-}
-
 function buildInstalledMetadata(
   skill: SkillManifest,
   context: { cwd: string; statePaths: StatePaths; installedAt: string; source: string },
@@ -1127,99 +924,6 @@ function getNow(options: ProjectOptions): NowFn {
 
 function toPosix(value: string): string {
   return value.split(path.sep).join("/");
-}
-
-async function maybeAutoSync(options: {
-  cwd: string;
-  scope?: InstallScope | undefined;
-  agentSkillsDir?: string | undefined;
-  adapters: LockfileState["adapters"];
-  adapterOverride?: string | undefined;
-  enabled: boolean;
-  now: NowFn;
-  changed: boolean;
-  mode?: SyncWriteMode | undefined;
-}): Promise<SyncCommandResult | null> {
-  if (!options.enabled || !options.changed) {
-    return null;
-  }
-
-  if (resolveSyncAdapterIds(options.adapters, options.adapterOverride).length === 0) {
-    return null;
-  }
-
-  return syncInstalledSkills({
-    cwd: options.cwd,
-    scope: options.scope || DEFAULT_INSTALL_SCOPE,
-    ...(options.agentSkillsDir ? { agentSkillsDir: options.agentSkillsDir } : {}),
-    ...(options.adapterOverride ? { adapter: options.adapterOverride } : {}),
-    ...(options.mode ? { mode: options.mode } : {}),
-    now: options.now,
-  });
-}
-
-async function maybeSyncAfterRemove(options: {
-  cwd: string;
-  scope?: InstallScope | undefined;
-  agentSkillsDir?: string | undefined;
-  adapters: LockfileState["adapters"];
-  adapterOverride?: string | undefined;
-  syncHistory: SyncHistory;
-  legacySync: LockfileState["sync"];
-  enabled: boolean;
-  now: NowFn;
-  changed: boolean;
-  mode?: SyncWriteMode | undefined;
-}): Promise<SyncCommandResult | null> {
-  if (!options.changed) {
-    return null;
-  }
-
-  const adapters = new Set<string>();
-  for (const adapterId of Object.keys(options.syncHistory || {})) {
-    adapters.add(adapterId);
-  }
-  if (options.legacySync?.adapter) {
-    adapters.add(options.legacySync.adapter);
-  }
-  if (options.adapterOverride) {
-    adapters.add(options.adapterOverride);
-  } else if (options.enabled) {
-    for (const adapterId of resolveSyncAdapterIds(options.adapters)) {
-      adapters.add(adapterId);
-    }
-  }
-
-  let result: SyncCommandResult | null = null;
-  for (const adapterId of adapters) {
-    result = await syncInstalledSkills({
-      cwd: options.cwd,
-      scope: options.scope || DEFAULT_INSTALL_SCOPE,
-      ...(options.agentSkillsDir ? { agentSkillsDir: options.agentSkillsDir } : {}),
-      adapter: adapterId,
-      ...(options.mode ? { mode: options.mode } : {}),
-      now: options.now,
-    });
-  }
-
-  return result;
-}
-
-function resolveSyncAdapterIds(adapters: LockfileState["adapters"], adapterOverride?: string): string[] {
-  if (adapterOverride) {
-    return [adapterOverride];
-  }
-
-  const adapterIds: string[] = [];
-  if (adapters.active) {
-    adapterIds.push(adapters.active);
-  }
-  for (const adapterId of adapters.detected || []) {
-    if (!adapterIds.includes(adapterId)) {
-      adapterIds.push(adapterId);
-    }
-  }
-  return adapterIds;
 }
 
 function toCatalogSourceInput(
@@ -1274,45 +978,6 @@ function resolveInstalledSkillPath(cwd: string, skillPath: string): string {
   return path.isAbsolute(skillPath) ? skillPath : path.resolve(cwd, skillPath);
 }
 
-async function confirmDirectInstall(skillRef: string, options: InstallOptions): Promise<void> {
-  const warning = `Warning: ${skillRef} will be installed directly from GitHub and has not been verified by the active catalog.`;
-  (options.warn || console.error)(warning);
-
-  const confirm = options.confirm || (() => confirmAction("Continuar com a instalacao direta?"));
-  const accepted = await confirm();
-  if (!accepted) {
-    throw new InstallError("Instalacao direta cancelada pelo usuario.", "INSTALL_CANCELLED");
-  }
-}
-
-function parseGitHubSource(source: string): DirectGitHubRef | null {
-  if (!source.startsWith("github:")) {
-    return null;
-  }
-
-  const withoutPrefix = source.slice("github:".length);
-  const separatorIndex = withoutPrefix.lastIndexOf("@");
-  if (separatorIndex <= 0) {
-    return null;
-  }
-
-  return parseDirectGitHubRef(
-    `${withoutPrefix.slice(0, separatorIndex)}@${withoutPrefix.slice(separatorIndex + 1)}`,
-  );
-}
-
-function normalizeRepoSkillId(repo: string): string {
-  return repo.trim().toLowerCase();
-}
-
-function toTitleCase(skillId: string): string {
-  return skillId
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function toInstallError(error: unknown, fallbackMessage: string): InstallError {
   if (error instanceof InstallError) {
     return error;
@@ -1324,3 +989,19 @@ function toInstallError(error: unknown, fallbackMessage: string): InstallError {
   const message = error instanceof Error ? error.message : String(error);
   return new InstallError(`${fallbackMessage}: ${message}`);
 }
+
+// Silence unused-import warnings while keeping the symbols available as named re-exports.
+void DEFAULT_AGENT_SKILLS_DIR;
+void DEFAULT_REF;
+void DEFAULT_REPO;
+void dedupeSources;
+void normalizeSyncHistory;
+void normalizeDirectManifest;
+void createBaseLockfile;
+void PLACEHOLDER_REPOS;
+void resolveSyncAdapterIds;
+type _SyncFnAlias = SyncFn;
+type _DirectInstallPayloadAlias = DirectInstallPayload;
+type _SyncHistoryAlias = SyncHistory;
+type _SyncWriteModeAlias = SyncWriteMode;
+type _InstallScopeAlias = InstallScope;

@@ -7,6 +7,7 @@ import {
   resolveSource,
   searchCatalogSkills,
 } from "../src/catalog.js";
+import { parseSkillFrontmatter } from "../src/skill.js";
 import type { SkillManifest } from "../src/types.js";
 
 test("parseGitHubRepo aceita owner/repo", () => {
@@ -78,6 +79,35 @@ test("searchCatalogSkills filtra por texto e compatibilidade", () => {
 
   assert.equal(results.length, 1);
   assert.equal(results[0]!.id, "git-master");
+});
+
+test("parseSkillFrontmatter handles plain, quoted, and colon-bearing values", () => {
+  // Plain value.
+  assert.deepEqual(
+    parseSkillFrontmatter(`---\nname: git-master\ndescription: Semantic git flow\n---\n# Body`),
+    { name: "git-master", description: "Semantic git flow" },
+  );
+
+  // Quoted value (single and double).
+  assert.deepEqual(
+    parseSkillFrontmatter(`---\nname: "git-master"\ndescription: 'Semantic git flow'\n---\n`),
+    { name: "git-master", description: "Semantic git flow" },
+  );
+
+  // Value with `:` characters preserved.
+  assert.deepEqual(
+    parseSkillFrontmatter(`---\nname: net-tools\ndescription: Helpers for tcp:443 and tls:1.3\n---\n`),
+    { name: "net-tools", description: "Helpers for tcp:443 and tls:1.3" },
+  );
+
+  // Boolean coercion for autoInject.
+  assert.deepEqual(
+    parseSkillFrontmatter(`---\nname: x\nautoInject: true\nactivationPrompt: "Run me"\n---\n`),
+    { name: "x", autoInject: true, activationPrompt: "Run me" },
+  );
+
+  // Missing frontmatter returns empty object.
+  assert.deepEqual(parseSkillFrontmatter("# No frontmatter here"), {});
 });
 
 test("searchCatalogSkills normaliza aliases de compatibilidade", () => {

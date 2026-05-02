@@ -11,6 +11,7 @@ import { normalizeAdapterList } from "./adapters.js";
 import { assertSafeRelativePath } from "./fs.js";
 import { fetchJson, fetchOptionalJson, fetchText } from "./http.js";
 import { debug } from "./output.js";
+import { parseSkillFrontmatter } from "./skill.js";
 import type {
   CatalogData,
   CatalogSource,
@@ -290,7 +291,7 @@ async function loadCatalogFromTree(source: CatalogSource): Promise<CatalogData> 
       const skillPath = skillFile.path.slice(0, -"/SKILL.md".length);
       const skillId = skillPath.split("/").pop();
       const skillBody = await fetchJsonLikeText(buildRawGitHubUrl(source.repo, source.ref, skillFile.path));
-      const metadata = extractSkillMetadata(skillBody);
+      const metadata = parseSkillFrontmatter(skillBody);
 
       return normalizeSkill(
         {
@@ -315,39 +316,6 @@ async function loadCatalogFromTree(source: CatalogSource): Promise<CatalogData> 
 
 async function fetchJsonLikeText(url: string): Promise<string> {
   return fetchText(url, { headers: { Accept: "text/plain" } });
-}
-
-function extractSkillMetadata(content: string): { name?: string; description?: string } {
-  const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-  if (!match) {
-    return {};
-  }
-
-  const frontmatter = match[1];
-  if (frontmatter === undefined) {
-    return {};
-  }
-
-  const name = extractFrontmatterValue(frontmatter, "name");
-  const description = extractFrontmatterValue(frontmatter, "description");
-
-  return {
-    ...(name !== null ? { name } : {}),
-    ...(description !== null ? { description } : {}),
-  };
-}
-
-function extractFrontmatterValue(frontmatter: string, key: string): string | null {
-  const expression = new RegExp(`^${key}:\\s*(.+)$`, "m");
-  const match = frontmatter.match(expression);
-  if (!match) {
-    return null;
-  }
-  const value = match[1];
-  if (value === undefined) {
-    return null;
-  }
-  return value.trim().replace(/^["']|["']$/g, "");
 }
 
 function collectFilesUnderPath(treeFiles: GitTreeItem[], skillPath: string): string[] {

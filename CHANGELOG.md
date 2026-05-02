@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Refactor: `src/install.ts` split into focused modules — `src/lockfile.ts`, `src/direct-github.ts`, `src/auto-sync.ts`, and `src/downloader.ts`. Public `package.json#exports` and import paths preserved via re-exports. Zero user-visible behavior change.
+- Consolidated SKILL.md frontmatter parsing on `parseSkillFrontmatter` (`src/skill.ts`); the duplicate inline parser in `src/catalog.ts` was removed.
+
 ## [0.3.1] - 2026-04-08
 
 ### Fixed
