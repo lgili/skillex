@@ -1,10 +1,12 @@
 import * as path from "node:path";
 import { listAdapters } from "./adapters.js";
 import {
+  buildRawGitHubUrl,
   computeCatalogCacheKey,
   readCatalogCache,
   searchCatalogSkills,
 } from "./catalog.js";
+import { fetchText } from "./http.js";
 import { DEFAULT_INSTALL_SCOPE, getScopedStatePaths } from "./config.js";
 import {
   addProjectSource,
@@ -22,6 +24,7 @@ import {
 import * as output from "./output.js";
 import { setVerbose, suggestClosest } from "./output.js";
 import { parseSkillCommandReference, runSkillScript } from "./runner.js";
+import { getRecommendedSkillIds } from "./recommended.js";
 import { runInteractiveUi } from "./ui.js";
 import { startWebUiServer } from "./web-ui.js";
 import type { InstallScope, ParsedArgs, ProjectOptions, SearchOptions, SyncWriteMode } from "./types.js";
@@ -68,6 +71,8 @@ const BOOLEAN_FLAGS = new Set<string>([
   "auto-sync",
   "dry-run",
   "exit-code",
+  "raw",
+  "install-recommended",
 ]);
 
 /** Union of all flags the parser accepts anywhere in the CLI. */
@@ -82,6 +87,7 @@ const COMMANDS = [
   "remove",
   "sync",
   "run",
+  "show",
   "browse",
   "tui",
   "ui",
@@ -105,16 +111,18 @@ const COMMAND_HELP: Record<string, string> = {
 Initialize Skillex state for the local workspace or global user scope.
 
 Options:
-  --repo <owner/repo>   GitHub repository with skills (default: lgili/skillex)
-  --ref <ref>           Branch, tag, or commit (default: main)
-  --adapter <id>        Force a specific adapter
-  --auto-sync           Enable or disable auto-sync (default: on)
-  --scope <scope>       local or global (default: local)
-  --global              Shortcut for --scope global
-  --cwd <path>          Target project directory (default: current directory)
+  --repo <owner/repo>      GitHub repository with skills (default: lgili/skillex)
+  --ref <ref>              Branch, tag, or commit (default: main)
+  --adapter <id>           Force a specific adapter
+  --auto-sync              Enable or disable auto-sync (default: on)
+  --install-recommended    After init, install a curated starter pack
+  --scope <scope>          local or global (default: local)
+  --global                 Shortcut for --scope global
+  --cwd <path>             Target project directory (default: current directory)
 
 Example:
   skillex init
+  skillex init --install-recommended
   skillex init --repo myorg/my-skills
   skillex init --global --adapter codex`,
 
@@ -139,12 +147,13 @@ Search skills by text, compatibility, or tags.
 Options:
   --repo <owner/repo>   GitHub repository (limits this command to one source)
   --compatibility <id>  Filter by adapter compatibility
-  --tag <tag>           Filter by tag
+  --tag <tag>           Filter by tag (alias: --tags for compatibility)
   --no-cache            Bypass local catalog cache
   --json                Output results as JSON
 
 Example:
-  skillex search git --compatibility claude`,
+  skillex search git --compatibility claude
+  skillex search --tag workflow`,
 
   install: `Usage: skillex install <skill-id...> [options]
          skillex install --all [options]
@@ -220,6 +229,21 @@ Options:
 
 Example:
   skillex run git-master:cleanup --yes`,
+
+  show: `Usage: skillex show <skill-id> [options]
+
+Print the manifest summary and rendered SKILL.md content of a skill from
+the configured catalog sources without installing it.
+
+Options:
+  --repo <owner/repo>   Limit resolution to one source
+  --raw                 Print SKILL.md verbatim (no manifest header)
+  --json                Print manifest + raw SKILL.md as a single JSON object
+  --no-cache            Bypass local catalog cache
+
+Example:
+  skillex show git-master
+  skillex show code-review --raw`,
 
   browse: `Usage: skillex browse [options]
          skillex tui [options]
@@ -379,6 +403,9 @@ export async function main(argv: string[]): Promise<void> {
     case "run":
       await handleRun(positionals, flags, userConfig);
       return;
+    case "show":
+      await handleShow(positionals, flags, userConfig);
+      return;
     case "ui":
       await handleWebUi(flags, userConfig);
       return;
@@ -411,6 +438,7 @@ export async function main(argv: string[]): Promise<void> {
 
 async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void> {
   const repo = asOptionalString(flags.repo) ?? userConfig.defaultRepo;
+  const installRecommended = parseBooleanFlag(flags["install-recommended"], "install-recommended") ?? false;
 
   const opts = commonOptions(flags, userConfig);
   const result = await initProject({
@@ -443,7 +471,26 @@ async function handleInit(flags: CliFlags, userConfig: UserConfig): Promise<void
   if (result.lockfile.adapters.detected.length > 0) {
     output.info(`  Detected : ${result.lockfile.adapters.detected.join(", ")}`);
   }
-  output.info("\nNext: run 'skillex list' to browse available skills");
+
+  if (installRecommended) {
+    const recommended = getRecommendedSkillIds();
+    output.info(`\nInstalling ${recommended.length} recommended skill(s)...`);
+    const installResult = await installSkills(recommended, {
+      ...opts,
+      onProgress: (current, total, skillId) => output.progress(current, total, skillId),
+    });
+    output.success(`Installed ${installResult.installedCount} skill(s) from the recommended pack`);
+    for (const skill of installResult.installedSkills) {
+      output.info(`  + ${skill.id}@${skill.version}`);
+    }
+    printAutoSyncResult(installResult.autoSync);
+    return;
+  }
+
+  output.info("\nNext steps:");
+  output.info("  • Browse and install interactively:  skillex");
+  output.info("  • Install a curated starter pack:    skillex init --install-recommended");
+  output.info("  • List the full catalog:             skillex list");
 }
 
 async function handleList(flags: CliFlags, userConfig: UserConfig): Promise<void> {
@@ -482,7 +529,9 @@ async function handleSearch(positionals: string[], flags: CliFlags, userConfig: 
 
   const searchOptions: SearchOptions = { query: positionals.join(" ") };
   const compatibility = asOptionalString(flags.compatibility);
-  const tag = asOptionalString(flags.tag);
+  // `--tag` is canonical; `--tags` is accepted as an alias because earlier README
+  // versions documented the plural form. The parser already permits both names.
+  const tag = asOptionalString(flags.tag) ?? asOptionalString(flags.tags);
   if (compatibility) searchOptions.compatibility = compatibility;
   if (tag) searchOptions.tags = tag;
 
@@ -614,6 +663,72 @@ async function handleRun(positionals: string[], flags: CliFlags, userConfig: Use
   if (exitCode !== 0) {
     process.exitCode = exitCode;
   }
+}
+
+async function handleShow(positionals: string[], flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const skillId = positionals[0];
+  if (!skillId) {
+    throw new CliError(
+      "Provide a skill id. Usage: skillex show <skill-id> [--raw|--json]",
+      "SHOW_REQUIRES_SKILL",
+    );
+  }
+
+  const opts = commonOptions(flags, userConfig);
+  const aggregated = await loadProjectCatalogs({ ...opts, ...cacheOptions(opts) });
+  const matches = aggregated.skills.filter((s) => s.id === skillId);
+
+  if (matches.length === 0) {
+    throw new CliError(
+      `Skill "${skillId}" not found in the configured sources.`,
+      "SHOW_SKILL_NOT_FOUND",
+    );
+  }
+  if (matches.length > 1) {
+    const sourceList = matches.map((m) => `${m.source.repo}@${m.source.ref}`).join(", ");
+    throw new CliError(
+      `Skill "${skillId}" exists in multiple sources: ${sourceList}. Use --repo to choose one.`,
+      "SHOW_AMBIGUOUS_SOURCE",
+    );
+  }
+
+  const skill = matches[0]!;
+  const skillFile = skill.entry || "SKILL.md";
+  const remotePath = skill.path ? `${skill.path}/${skillFile}` : skillFile;
+  const url = buildRawGitHubUrl(skill.source.repo, skill.source.ref, remotePath);
+  const body = await fetchText(url, { headers: { Accept: "text/plain" } });
+
+  const raw = parseBooleanFlag(flags.raw, "raw") ?? false;
+
+  if (flags.json === true) {
+    output.info(
+      JSON.stringify(
+        {
+          ...skill,
+          entryContent: body,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  if (raw) {
+    process.stdout.write(body.endsWith("\n") ? body : `${body}\n`);
+    return;
+  }
+
+  output.info(`${skill.name} (${skill.id}) — v${skill.version}`);
+  output.info(`Source       : ${skill.source.repo}@${skill.source.ref}${skill.source.label ? ` [${skill.source.label}]` : ""}`);
+  if (skill.author) output.info(`Author       : ${skill.author}`);
+  if (skill.tags.length) output.info(`Tags         : ${skill.tags.join(", ")}`);
+  if (skill.compatibility.length) output.info(`Compatibility: ${skill.compatibility.join(", ")}`);
+  output.info(`Files        : ${skill.files.length}`);
+  output.info("");
+  output.info("─".repeat(60));
+  output.info("");
+  process.stdout.write(body.endsWith("\n") ? body : `${body}\n`);
 }
 
 async function handleBrowse(flags: CliFlags, userConfig: UserConfig): Promise<void> {

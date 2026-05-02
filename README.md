@@ -28,20 +28,29 @@
 
 ---
 
+## Why Skillex?
+
+- **One install, every agent.** Skills get exposed to Claude / Codex / Cursor / Copilot / Cline / Gemini / Windsurf at once, instead of copy-pasting the same prompt into seven config files.
+- **Catalog-driven, not folder-driven.** Skills live in versioned GitHub repos with manifests, descriptions, and tags. Update them with one command instead of `git submodule` gymnastics.
+- **Lockfile + auto-sync.** Skillex tracks what's installed and re-syncs after every change so the agent surface in your repo always matches the lockfile.
+
 ## Quick Start
 
 Get up and running in under two minutes using the built-in first-party skills catalog:
 
 ```bash
-# 1. Initialize your workspace (auto-detects your AI agent)
-npx skillex@latest init
+# Easiest: open the interactive terminal browser
+npx skillex@latest
 
-# 2. Browse available skills
-npx skillex@latest list
-
-# 3. Install a skill
-npx skillex@latest install create-skills
+# Or, scriptable mode:
+npx skillex@latest init                                  # set up the workspace
+npx skillex@latest init --install-recommended            # ...with a curated starter pack
+npx skillex@latest install create-skills                 # install one skill by id
+npx skillex@latest show code-review                      # preview a skill before installing
+npx skillex@latest list                                  # list every available skill
 ```
+
+> **Tip:** after the first `npx skillex@latest` call, the binary is cached on your machine, so subsequent invocations can drop the `npx skillex@latest` prefix and just call `skillex`.
 
 > **Important:** auto-sync is enabled by default. After `init`, `install`, `update`, and `remove`, Skillex automatically synchronizes skills into every detected adapter target. For directory-native adapters such as Codex, Claude, and Gemini, this materializes one folder per skill under the agent's `skills/` directory. For file-based adapters such as Copilot, Cursor, Cline, and Windsurf, it updates the adapter config file. Use `skillex sync` when you want to preview, re-run manually, or target a specific adapter.
 
@@ -110,6 +119,7 @@ skillex init --global --adapter codex
 | `--repo <owner/repo>` | Optional. Overrides the default first-party source for this workspace. |
 | `--adapter <id>` | Force a specific adapter instead of auto-detecting. |
 | `--auto-sync` | Enable or disable automatic sync after install, update, and remove. Default: `true`. |
+| `--install-recommended` | After init, install a curated starter pack (`commit-craft`, `code-review`, `secure-defaults`, `error-handling`, `test-discipline`). |
 | `--ref <branch>` | Use a specific branch or tag (default: `main`). |
 | `--scope <local\|global>` | Choose whether Skillex manages workspace or user-global state. |
 | `--global` | Shortcut for `--scope global`. |
@@ -150,7 +160,7 @@ skillex search code-review --repo myorg/my-skills
 |------|-------------|
 | `--repo <owner/repo>` | Limit the command to a single source instead of aggregating all configured sources. |
 | `--compatibility <adapter>` | Filter by adapter (e.g. `cursor`, `claude`, `codex`). |
-| `--tags <tag>` | Filter by tag. |
+| `--tag <tag>` | Filter by tag. (`--tags` is also accepted for backward compatibility with earlier docs.) |
 | `--json` | Print raw JSON. |
 
 ---
@@ -271,8 +281,31 @@ Execute a script declared in a skill's `skill.json`.
 
 ```bash
 skillex run git-master:cleanup
-skillex run git-master:cleanup --yes   # skip confirmation
+skillex run git-master:cleanup --yes              # skip confirmation
+skillex run git-master:cleanup -- --extra=arg     # forward "--extra=arg" to the script
 ```
+
+---
+
+### `show`
+
+Print a skill's manifest summary plus its rendered `SKILL.md` content from the
+configured catalog sources, **without installing anything**. Use this to
+preview a skill before deciding to install.
+
+```bash
+skillex show git-master                          # human-friendly summary + content
+skillex show code-review --raw                   # SKILL.md verbatim, no header
+skillex show secure-defaults --json              # manifest + entry content as JSON
+skillex show foo --repo myorg/my-skills          # disambiguate when multiple sources match
+```
+
+| Flag | Description |
+|------|-------------|
+| `--repo <owner/repo>` | Limit resolution to one source. |
+| `--raw` | Print SKILL.md verbatim with no manifest header. |
+| `--json` | Print the resolved manifest plus the raw SKILL.md as a single JSON object. |
+| `--no-cache` | Bypass local catalog cache. |
 
 ---
 

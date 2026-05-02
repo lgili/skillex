@@ -42,6 +42,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `skillex sync --exit-code` (mirrors `git diff --exit-code`): when combined with `--dry-run`, the command exits `1` whenever drift would be applied. CI scripts can use this to detect "config out of sync" without parsing diff output.
 - `suggestClosest(actual, candidates, threshold = 2)` helper in `src/output.ts`, used by the parser and dispatcher to power "did you mean" hints.
+- `skillex init --install-recommended`: after the lockfile is created, installs a curated starter pack (`commit-craft`, `code-review`, `secure-defaults`, `error-handling`, `test-discipline`) using the same progress output as `install --all`.
+- `skillex show <skill-id>`: print a skill's manifest summary plus its `SKILL.md` content from the configured sources without installing it. `--raw` prints the markdown unmodified; `--json` returns a single object.
+- `--tags <tag>` accepted as a hidden alias of `--tag` on `skillex search` so README examples that documented the plural form continue to work.
+
+### Changed
+- `skillex init` now ends with a three-line "Next steps" block recommending the no-args TUI, the `--install-recommended` starter pack, and the full catalog list. The block is suppressed when `--install-recommended` is used (the install summary stands on its own).
+- README rewritten: new "Why Skillex" section explains the value over submodules / copy-paste / per-agent config; Quick Start now leads with the no-args TUI as the primary path with the three-command chain framed as "scriptable mode."
+
+### Fixed
+- README example at the search section now uses the canonical `--tag <tag>` flag instead of the silently-ignored `--tags`.
 
 ## [0.3.1] - 2026-04-08
 
