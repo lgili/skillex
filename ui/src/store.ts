@@ -40,6 +40,8 @@ export interface SkillexStore {
     busyLabel: string | null;
     /** Skill ids whose card-level action is currently in flight. */
     busyCards: Set<string>;
+    /** Skill ids the user has selected for bulk operations (install/remove). */
+    selectedSkillIds: Set<string>;
     /** Aggregate health from the most recent /api/doctor poll. */
     doctorStatus: DoctorStatus;
     notice: { tone: NoticeTone; message: string } | null;
@@ -67,6 +69,16 @@ export interface SkillexStore {
   removeSource: (repo: string) => Promise<void>;
   setSearchQuery: (query: string) => void;
   clearNotice: () => void;
+  /** Bulk selection — toggles the skill id in `state.selectedSkillIds`. */
+  toggleSelectedSkill: (skillId: string) => void;
+  /** Replaces the selection with the supplied ids. Pass [] to clear. */
+  setSelectedSkills: (skillIds: string[]) => void;
+  /** Convenience: clears every selected id. */
+  clearSelection: () => void;
+  /** Installs every currently-selected skill (skips those already installed). */
+  installSelectedSkills: () => Promise<{ installedCount: number }>;
+  /** Removes every currently-selected skill (skips those not installed). */
+  removeSelectedSkills: () => Promise<{ removedCount: number }>;
   /** Refresh the cached aggregate doctor status (called on initialize + after mutations). */
   loadDoctorStatus: () => Promise<void>;
   /** Full Doctor report for the dedicated Doctor page. */
@@ -93,6 +105,7 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     initialized: false,
     busyLabel: null as string | null,
     busyCards: new Set<string>(),
+    selectedSkillIds: new Set<string>(),
     doctorStatus: null as DoctorStatus,
     notice: null as { tone: NoticeTone; message: string } | null,
     toast: {
@@ -459,6 +472,61 @@ export function createSkillexStore(router: Router, bootstrap: WebUiBootstrap): S
     },
     loadDoctor() {
       return api.getDoctor();
+    },
+    toggleSelectedSkill(skillId: string) {
+      const next = new Set(state.selectedSkillIds);
+      if (next.has(skillId)) {
+        next.delete(skillId);
+      } else {
+        next.add(skillId);
+      }
+      state.selectedSkillIds = next;
+    },
+    setSelectedSkills(skillIds: string[]) {
+      state.selectedSkillIds = new Set(skillIds);
+    },
+    clearSelection() {
+      if (state.selectedSkillIds.size === 0) return;
+      state.selectedSkillIds = new Set();
+    },
+    async installSelectedSkills() {
+      const installedIds = new Set((state.dashboard?.installed ?? []).map((s) => s.id));
+      const targets = [...state.selectedSkillIds].filter((id) => !installedIds.has(id));
+      if (targets.length === 0) {
+        showNotice("Selected skills are already installed.", "info");
+        state.selectedSkillIds = new Set();
+        return { installedCount: 0 };
+      }
+      let summary: { installedCount: number } = { installedCount: 0 };
+      await runGlobalAction(
+        `Installing ${targets.length} selected skill(s)`,
+        async () => {
+          const res = await api.installSkillIds(targets);
+          summary = { installedCount: res.installedCount };
+        },
+        state.detail?.skill.id || null,
+      );
+      state.selectedSkillIds = new Set();
+      return summary;
+    },
+    async removeSelectedSkills() {
+      const installedIds = new Set((state.dashboard?.installed ?? []).map((s) => s.id));
+      const targets = [...state.selectedSkillIds].filter((id) => installedIds.has(id));
+      if (targets.length === 0) {
+        showNotice("No selected skills are installed.", "info");
+        state.selectedSkillIds = new Set();
+        return { removedCount: 0 };
+      }
+      let summary: { removedCount: number } = { removedCount: 0 };
+      await runGlobalAction(
+        `Removing ${targets.length} selected skill(s)`,
+        async () => {
+          const res = await api.removeSkills(targets);
+          summary = { removedCount: res.removedSkills.length };
+        },
+      );
+      state.selectedSkillIds = new Set();
+      return summary;
     },
   };
 }

@@ -155,8 +155,60 @@ function onInstallAllRequested(): void {
   showInstallAll.value = true;
 }
 
-onMounted(() => window.addEventListener("skillex:request-install-all", onInstallAllRequested));
-onUnmounted(() => window.removeEventListener("skillex:request-install-all", onInstallAllRequested));
+/** Esc clears any active selection (no-op when nothing is selected). */
+function onSelectionEscape(event: KeyboardEvent): void {
+  if (event.key !== "Escape") return;
+  if (store.state.selectedSkillIds.size === 0) return;
+  // Don't clear selection if a confirm dialog is open or a text input is focused.
+  if (showInstallAll.value || showRemoveAll.value) return;
+  const target = event.target as HTMLElement | null;
+  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+  store.clearSelection();
+}
+
+// Bulk-selection action shortcuts
+const selectedCount = computed(() => store.state.selectedSkillIds.size);
+const selectionInstallableCount = computed(() => {
+  const installedIds = new Set((store.state.dashboard?.installed ?? []).map((s) => s.id));
+  let n = 0;
+  for (const id of store.state.selectedSkillIds) if (!installedIds.has(id)) n += 1;
+  return n;
+});
+const selectionRemovableCount = computed(() => {
+  const installedIds = new Set((store.state.dashboard?.installed ?? []).map((s) => s.id));
+  let n = 0;
+  for (const id of store.state.selectedSkillIds) if (installedIds.has(id)) n += 1;
+  return n;
+});
+
+function selectAllVisible(): void {
+  store.setSelectedSkills(visibleSkills.value.map((s) => s.id));
+}
+
+async function handleInstallSelected(): Promise<void> {
+  try {
+    await store.installSelectedSkills();
+  } catch {
+    /* surfaced via toast */
+  }
+}
+
+async function handleRemoveSelected(): Promise<void> {
+  try {
+    await store.removeSelectedSkills();
+  } catch {
+    /* surfaced via toast */
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("skillex:request-install-all", onInstallAllRequested);
+  window.addEventListener("keydown", onSelectionEscape);
+});
+onUnmounted(() => {
+  window.removeEventListener("skillex:request-install-all", onInstallAllRequested);
+  window.removeEventListener("keydown", onSelectionEscape);
+});
 </script>
 
 <template>
@@ -221,6 +273,11 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
         </div>
       </div>
 
+      <!-- Shift+click hint: surfaces the bulk-select gesture for first-time users. -->
+      <p v-if="!isInitialLoading && totalSkills > 0 && selectedCount === 0" class="bulk-select-hint">
+        <kbd>Shift</kbd> + click any card to start a multi-select.
+      </p>
+
       <!-- Stats row -->
       <div class="catalog-overview">
         <article class="overview-card">
@@ -278,6 +335,54 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
         </button>
       </div>
     </div>
+
+    <!-- ── Selection bar: shown when at least one skill is selected. ─────── -->
+    <transition name="selection-bar">
+      <div v-if="selectedCount > 0" class="selection-bar" role="region" aria-label="Bulk selection">
+        <div class="selection-bar-info">
+          <strong>{{ selectedCount }} selected</strong>
+          <span class="selection-bar-hint">
+            Shift+click cards to add/remove ·
+            <button type="button" class="link-button" @click="selectAllVisible">Select all visible ({{ visibleSkills.length }})</button>
+          </span>
+        </div>
+        <div class="selection-bar-actions">
+          <button
+            v-if="selectionInstallableCount > 0"
+            class="button button-primary"
+            type="button"
+            :disabled="store.state.busyLabel !== null"
+            @click="handleInstallSelected"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
+            </svg>
+            Install {{ selectionInstallableCount }}
+          </button>
+          <button
+            v-if="selectionRemovableCount > 0"
+            class="button button-danger"
+            type="button"
+            :disabled="store.state.busyLabel !== null"
+            @click="handleRemoveSelected"
+          >
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Remove {{ selectionRemovableCount }}
+          </button>
+          <button
+            class="button button-ghost"
+            type="button"
+            title="Clear selection (Esc)"
+            @click="store.clearSelection()"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    </transition>
 
     <!-- ── Skeleton: first load ───────────────────────────────────────────── -->
     <div v-if="isInitialLoading" class="catalog-grid">
@@ -513,6 +618,73 @@ onUnmounted(() => window.removeEventListener("skillex:request-install-all", onIn
   margin-left: auto;
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--accent);
+  background: linear-gradient(135deg, var(--accent-soft) 0%, rgba(16, 185, 129, 0.04) 100%);
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  box-shadow: var(--shadow-soft);
+}
+
+.selection-bar-info strong {
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+.selection-bar-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.selection-bar-hint .link-button {
+  font-size: 0.75rem;
+}
+
+.selection-bar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.selection-bar-enter-active,
+.selection-bar-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.selection-bar-enter-from,
+.selection-bar-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.bulk-select-hint {
+  margin: 4px 0 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bulk-select-hint kbd {
+  font-family: monospace;
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+@media (max-width: 680px) {
+  .bulk-select-hint { display: none; }
 }
 
 @media (max-width: 680px) {

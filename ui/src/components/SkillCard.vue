@@ -26,6 +26,36 @@ const searchQuery = computed(() => store.state.searchQuery);
 const nameSegments = computed(() => highlightSegments(props.skill.name, searchQuery.value));
 const descriptionSegments = computed(() => highlightSegments(props.skill.description, searchQuery.value));
 
+/** Selection state plumbed through the global store. */
+const isSelected = computed(() => store.state.selectedSkillIds.has(props.skill.id));
+const inSelectionMode = computed(() => store.state.selectedSkillIds.size > 0);
+
+/**
+ * Card click handler:
+ *   - Shift+click  → toggle selection (always; even when selection is empty,
+ *                     this enters selection mode).
+ *   - Plain click  → in selection mode, toggle selection. Otherwise navigate
+ *                     to the skill detail page (existing behavior).
+ */
+function handleCardClick(event: MouseEvent) {
+  if (event.shiftKey) {
+    event.preventDefault();
+    store.toggleSelectedSkill(props.skill.id);
+    return;
+  }
+  if (inSelectionMode.value) {
+    event.preventDefault();
+    store.toggleSelectedSkill(props.skill.id);
+    return;
+  }
+  props.onOpen(props.skill.id);
+}
+
+function handleCheckboxClick(event: MouseEvent) {
+  event.stopPropagation();
+  store.toggleSelectedSkill(props.skill.id);
+}
+
 const CATEGORY_MAP: Record<string, string> = {
   workflow: "icon-bg-workflow",
   testing:  "icon-bg-testing",
@@ -137,14 +167,74 @@ function avatarBackground(skill: CatalogSkill): string {
   padding: 0 2px;
   font-weight: inherit;
 }
+
+.skill-card-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1.5px solid var(--line-strong);
+  background: rgba(24, 24, 27, 0.85);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  transition: background 120ms, border-color 120ms;
+}
+.skill-card-checkbox:hover { border-color: var(--accent-ring); }
+.skill-card-checkbox.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.skill-card-checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.skill-card.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-soft);
+}
+
+/* When in selection mode, dim hover transform so cards feel batch-selectable. */
+.skill-card.in-selection-mode { transition: border-color 150ms, box-shadow 150ms, transform 150ms; }
 </style>
 
 <template>
   <article
     class="skill-card"
-    :class="{ 'is-installed': skill.installed, 'is-busy': isBusy }"
-    @click="onOpen(skill.id)"
+    :class="{
+      'is-installed': skill.installed,
+      'is-busy': isBusy,
+      'is-selected': isSelected,
+      'in-selection-mode': inSelectionMode,
+    }"
+    @click="handleCardClick"
   >
+    <!--
+      Selection checkbox: appears when the user is in selection mode (any card
+      selected). The checkbox itself is always interactive even when the card
+      is the busy one, so the user can deselect a stuck card.
+    -->
+    <button
+      v-if="inSelectionMode"
+      type="button"
+      class="skill-card-checkbox"
+      :class="{ checked: isSelected }"
+      :aria-checked="isSelected"
+      :aria-label="`${isSelected ? 'Deselect' : 'Select'} ${skill.name}`"
+      role="checkbox"
+      @click.stop="handleCheckboxClick"
+    >
+      <svg v-if="isSelected" width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+      </svg>
+    </button>
     <div class="skill-card-body">
       <!-- Icon row -->
       <div class="skill-card-icon-row">
