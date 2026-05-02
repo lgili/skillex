@@ -7,66 +7,258 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- `HttpError` typed error with codes `HTTP_TIMEOUT`, `HTTP_RATE_LIMIT`, `HTTP_AUTH_FAILED`, `HTTP_NOT_FOUND`, `HTTP_SERVER_ERROR`, `HTTP_ERROR` so callers can react programmatically to specific failure modes.
-- `RemoveSkillsResult.autoSyncs: SyncCommandResult[]` carrying every per-adapter sync outcome after a remove (the existing `autoSync` field is preserved as the first adapter's result for backward compatibility).
-- `createSymlink(target, link, { allowedRoot })` overload that refuses to create links pointing outside the managed root, raising `ValidationError("SYMLINK_TARGET_UNSAFE")`.
+## [0.4.0] - 2026-05-02
+
+A substantial release focused on **reliability, security, and UX**. The CLI is
+now production-grade (HTTP timeouts, host-restricted token, parallel
+downloads, hardened parser); the Web UI grew bulk actions, keyboard
+shortcuts, multi-select, persistent state, an accessible doctor panel, and a
+mobile drawer; and the codebase was refactored for maintainability without
+breaking the public API.
+
+Test count went from 63 → 88 (no regressions).
+
+### Highlights
+
+- **Reliability & security pass** — HTTP timeouts everywhere, GitHub token
+  scoped to GitHub-owned hosts, lockfile path safety, symlink confinement,
+  ref-character validation, mode `0o600` on `~/.askillrc.json`, parallel
+  file downloads (5–10× speedup on multi-file skills).
+- **CLI parser hardened** — unknown flags rejected with "did you mean"
+  suggestions, `--` sentinel honored, missing-value detection, unknown
+  commands suggest the closest match, `parseBooleanFlag` names the flag and
+  lists accepted values, `skillex doctor` differentiates DNS / TLS /
+  refused / timeout failures.
+- **Three new top-level commands / flags** — `skillex show <id>` previews a
+  skill's SKILL.md without installing, `skillex init --install-recommended`
+  ships a curated starter pack, `skillex sync --dry-run --exit-code`
+  mirrors `git diff --exit-code` for CI drift detection.
+- **Web UI marketplace overhaul** — Install all + Install recommended +
+  Remove all bulk actions; per-card optimistic UI; Shift+click multi-select
+  with range select; sticky selection bar; persistent selection across
+  refreshes; search highlight; group-by-source; related skills; mobile
+  drawer; Doctor panel + sidebar health dot; breadcrumbs; first-load
+  skeletons; `⌘K` and `⇧⌘A` shortcuts.
+- **Internationalization & regression guard** — every user-facing string
+  is now English; `scripts/check-language.mjs` runs in `npm test` and fails
+  CI if banned Portuguese tokens reappear without an explicit
+  `i18n-allow:` annotation.
+- **Refactor** — `src/install.ts` (1326 LOC) split into focused modules
+  (`lockfile.ts`, `direct-github.ts`, `auto-sync.ts`, `downloader.ts`,
+  `doctor.ts`) with re-exports preserving every existing import path.
+
+### Added — Core / CLI
+
+- `skillex show <skill-id>` — preview a skill's manifest + rendered SKILL.md
+  from the configured sources without installing. `--raw` prints the
+  markdown verbatim; `--json` returns the manifest plus the entry content
+  as a single object.
+- `skillex init --install-recommended` — after writing the lockfile, install
+  a curated 5-skill starter pack (`commit-craft`, `code-review`,
+  `secure-defaults`, `error-handling`, `test-discipline`) using the same
+  progress bar as `install --all`. The recommended list lives in
+  `src/recommended.ts` (single source of truth).
+- `skillex sync --dry-run --exit-code` — exit `1` whenever the dry-run
+  would change at least one adapter (mirrors `git diff --exit-code`). CI
+  scripts can detect drift without parsing the diff output.
+- `--tags <tag>` is accepted as a hidden alias of `--tag` on
+  `skillex search` so previously documented examples keep working.
+- `src/doctor.ts` exports `runDoctorChecks(options): Promise<DoctorReport>`
+  — the canonical six health checks reused by both the CLI and the Web UI.
+- `HttpError` typed error class with codes `HTTP_TIMEOUT`,
+  `HTTP_RATE_LIMIT`, `HTTP_AUTH_FAILED`, `HTTP_NOT_FOUND`,
+  `HTTP_SERVER_ERROR`, and `HTTP_ERROR`.
+- `RemoveSkillsResult.autoSyncs: SyncCommandResult[]` — full per-adapter
+  sync aggregate (the existing `autoSync` field is preserved as the first
+  result for backward compat).
+- `createSymlink(target, link, { allowedRoot })` overload that refuses
+  targets resolving outside the managed root.
+- `SkillManifest.category?: string` (optional). Catalog publishers can
+  group skills explicitly instead of relying on consumer-side regex
+  inference. Read from both `skill.json` and SKILL.md frontmatter.
+- `suggestClosest(actual, candidates, threshold = 2)` helper in
+  `src/output.ts` powers "did you mean" hints across the parser and
+  dispatcher.
+
+### Added — Web UI
+
+- **Doctor panel** + `GET /api/doctor` endpoint mirroring the CLI's six
+  checks, with a sidebar status dot (green / yellow / red + pulse)
+  refreshed after every mutation.
+- **Bulk install / remove / install-recommended** buttons in the catalog
+  hero, each guarded by an accessible `ConfirmDialog` (role=dialog,
+  aria-modal, focus on Cancel, Esc cancels, Enter only fires when no
+  button has focus).
+- **Per-card optimistic UI** — single-skill install / remove / update show
+  a localized spinner inside the card and dim only that card. Backed by
+  `state.busyCards: Set<string>` and a `runCardAction(skillId, label, fn)`
+  store helper. Bulk actions still use the global overlay.
+- **Bulk select via Shift+click** — sticky selection bar shows
+  `N selected`, `Select all visible (M)` link, and `Install N` /
+  `Remove N` buttons that count only the eligible subset. Plain click in
+  selection mode toggles. Esc clears (priority cascade — see Changed).
+- **Range select** — Shift+click on a second card selects the range
+  between the anchor and the target in the visible-id ordering
+  (Finder/Excel behavior). The anchor moves with each interaction so
+  successive Shift+clicks extend from the latest endpoint.
+- **Persistent selection** — selection (ids + anchor + scope) is mirrored
+  to `localStorage["skillex.selection"]`. Restored on startup, filtered to
+  ids that still exist in the loaded catalog under the same scope.
+- **Search highlight** — query matches in skill name and description are
+  wrapped in `<mark class="search-mark">` with an accent background. Pure
+  template rendering (no `v-html`) — XSS-safe.
+- **Group-by-source toggle** — when more than one source is configured, a
+  toggle in the category-pill row buckets the grid by source.repo with
+  per-bucket headers and counts.
+- **Related skills** on the SkillDetailPage — up to 4 cards scored by tag
+  overlap (+ 0.5 bonus for matching `category`). Cards are keyboard
+  accessible, show a 2-line description clamp, up to 3 tags, and a ✓ when
+  the related skill is already installed.
+- **Breadcrumbs** on the SkillDetailPage —
+  `Catalog (link, home icon) / category / skill-name (current)`.
+  Category resolves from the explicit manifest field first, falls back to
+  the regex inference, hidden when no signal.
+- **Onboarding card** for fresh workspaces — replaces the generic empty
+  state with a bright Install-all CTA + count when the workspace has zero
+  installed skills and no filter is active.
+- **Installed-only filter** — the "Installed" overview card is now a
+  toggle (`role=button`, Enter/Space, `aria-pressed`); active state filters
+  the grid to installed skills only. The stat now reads `N / total`.
+- **Inferred category chip** on cards whose category came from regex
+  fallback rather than an explicit manifest field.
+- **First-load skeletons** — new `Skeleton.vue` (variants `card` / `row`).
+  Catalog page renders 6 card-skeletons until `state.catalog` resolves;
+  Doctor page renders 4 row-skeletons; SkillDetailPage renders metadata
+  + body + related skeletons during its first fetch.
+- **Mobile drawer** — sidebar slides in/out on viewports ≤680 px instead
+  of being hidden entirely. Triggered by a topbar hamburger; tap backdrop
+  or Esc to close; route changes auto-close.
+- **Adapter dropdown** for compact viewports (≤1100 px) — replaces the 7
+  icon row with a single trigger + listbox menu (`role=listbox`,
+  `role=option`, `aria-selected`).
+- **`⌘K` / `Ctrl+K` shortcut** — focuses the topbar search. Navigates back
+  to `/` first when invoked from another route. Adaptive hint badge.
+- **`⇧⌘A` / `Ctrl+Shift+A` shortcut** — opens the Install-all confirm on
+  the catalog page. Skipped when typing in inputs. Shift required so the
+  browser's native "select all" (Cmd+A) is preserved. Discoverable via the
+  shortcut chip on the Install-all button.
+- **Demo media placeholder** — new `docs/media/` with a README describing
+  how to regenerate `tui.gif`, `web-ui.png`, `web-ui-doctor.png` (vhs +
+  asciinema). Main README has a "Demo" section that references the media
+  via raw GitHub URLs (no binaries in the npm tarball).
+- **"Why Skillex" section** in the README plus a Quick Start that leads
+  with `npx skillex@latest` (the TUI) and frames the
+  `init` → `install` chain as scriptable mode.
 
 ### Changed
-- **Reliability:** all HTTP helpers now abort after a default 30-second timeout when the caller does not provide their own `AbortSignal`, raising `HttpError("HTTP_TIMEOUT")` instead of hanging indefinitely.
-- **Performance:** `downloadSkillFiles` now fetches every file in a skill in parallel via `Promise.all`; multi-file skills now scale with bandwidth instead of file count.
-- **Security:** `Authorization: Bearer ${GITHUB_TOKEN}` is only attached when the request host is `api.github.com`, `raw.githubusercontent.com`, or any `*.githubusercontent.com` mirror. Tokens are no longer leaked to third-party `--catalog-url` targets.
-- **Security:** `~/.askillrc.json` (which may contain `githubToken`) is written with mode `0o600`; existing world-readable files are tightened on next save with a one-time warning.
-- **Security:** `removeSkill` validates `metadata.path` against the managed skills store before deleting; tampered lockfile paths raise `INSTALL_PATH_UNSAFE` instead of removing arbitrary directories.
-- **Security:** Sync per-skill symlinks now refuse targets that resolve outside the workspace state directory.
-- **Security:** `parseDirectGitHubRef` validates the ref segment against `^[A-Za-z0-9_.\-/]+$` and rejects empty refs after `@`; previously dangerous refs would land in the lockfile.
-- **HTTP errors:** 403 responses are now split into `HTTP_RATE_LIMIT` (when `X-RateLimit-Remaining: 0`) and `HTTP_AUTH_FAILED`, with separate actionable messages.
-- **`maybeSyncAfterRemove`** now runs adapter syncs in parallel via `Promise.all` and returns the full aggregate; the CLI prints one line per adapter after a multi-adapter remove (was previously dropping all but the last adapter's outcome).
-- **`toInstallError`** preserves the underlying `error.code` (HTTP error codes, `EACCES`, `ENOENT`, etc.) on the wrapped `InstallError` so callers can distinguish failure modes.
-- Refactor: `src/install.ts` split into focused modules — `src/lockfile.ts`, `src/direct-github.ts`, `src/auto-sync.ts`, and `src/downloader.ts`. Public `package.json#exports` and import paths preserved via re-exports. Zero user-visible behavior change.
-- Consolidated SKILL.md frontmatter parsing on `parseSkillFrontmatter` (`src/skill.ts`); the duplicate inline parser in `src/catalog.ts` was removed.
+
+- **Reliability:** all HTTP helpers now abort after a default 30-second
+  timeout when the caller does not provide an `AbortSignal`, raising
+  `HttpError("HTTP_TIMEOUT")` instead of hanging.
+- **HTTP errors:** 403 responses split into `HTTP_RATE_LIMIT` (when
+  `X-RateLimit-Remaining: 0`) and `HTTP_AUTH_FAILED`, each with an
+  actionable message. The rate-limit message includes the reset hint.
+- **`maybeSyncAfterRemove`** now runs adapter syncs in parallel via
+  `Promise.all` and returns the full aggregate; the CLI prints one line
+  per adapter (was previously dropping all but the last adapter's
+  outcome).
+- **`toInstallError`** preserves the underlying `error.code` (HTTP error
+  codes, `EACCES`, `ENOENT`, etc.) on the wrapped `InstallError`.
+- **CLI parser** is now schema-driven via `STRING_FLAGS` / `BOOLEAN_FLAGS`
+  / `KNOWN_FLAGS` sets. Unknown flags raise `CliError("UNKNOWN_FLAG")`
+  with a Levenshtein-based "did you mean" suggestion (typos like
+  `--scop=global` are no longer silently accepted).
+- **CLI parser** detects missing values for string flags and raises
+  `CliError("MISSING_FLAG_VALUE")` naming the offending flag.
+- **CLI parser** honors the literal `--` end-of-options sentinel and
+  exposes everything after it via `ParsedArgs.positionalAfter`, so
+  `skillex run x:cmd -- --foo` forwards `--foo` to the underlying script
+  without flag interpretation.
+- **CLI dispatcher** suggests the closest match for unknown commands
+  (e.g. `skillex insall git-master` → `Did you mean: install?`).
+- **`parseBooleanFlag`** error now names the flag and lists every accepted
+  value: `Invalid value "maybe" for --auto-sync. Use true, false, yes,
+  no, on, off, 1, or 0.`
+- **`INSTALL_NO_TARGETS`** (`skillex install` with no args) now prints a
+  3-line inline usage block instead of a one-liner hint.
+- **`skillex doctor`** differentiates DNS, connection-refused, TLS,
+  timeout, and 5xx failures and surfaces the underlying `error.message`
+  instead of collapsing every failure into "GitHub API is unreachable".
+- **`skillex init`** ends with a three-line "Next steps" block (TUI /
+  starter pack / full catalog) instead of a single line. Suppressed when
+  `--install-recommended` was used.
+- **SkillDetailPage** action order rewritten following "primary action
+  last": Sync (ghost) → Update (secondary, only when installed) →
+  Install (primary) or Remove (danger).
+- **Web UI Esc cascade** — the Esc key now follows a priority chain:
+  ConfirmDialog → adapter dropdown → mobile drawer → CatalogPage
+  selection. Each handler checks `event.defaultPrevented` before acting,
+  so only one consumer fires per keypress.
+- **Refactor:** `src/install.ts` (1326 LOC) split into `src/lockfile.ts`,
+  `src/direct-github.ts`, `src/auto-sync.ts`, `src/downloader.ts`. Public
+  `package.json#exports` and import paths preserved via re-exports.
+- Consolidated SKILL.md frontmatter parsing on `parseSkillFrontmatter`
+  (`src/skill.ts`); the duplicated inline parser in `src/catalog.ts` was
+  removed.
 
 ### Fixed
-- `toLockfileSource` boolean expression no longer contains a duplicated `(label || repo === DEFAULT_REPO)` test (copy-paste artifact); behavior unchanged.
-- All remaining Portuguese user-facing strings translated to English: TUI prompt label, sync symlink-fallback warnings, runner errors, direct-install confirmation, confirm prompt for non-TTY terminals, filesystem path errors, and Web UI labels (sidebar, catalog page, skill card buttons, detail page).
-- Sync warnings now route through `output.warn` instead of bare `console.error` so they respect color/stream conventions.
-- New `scripts/check-language.mjs` regression guard runs as part of `npm test` and fails CI if banned Portuguese tokens reappear in `src/**/*.ts` or `ui/src/**/*.{vue,ts}` without an explicit `i18n-allow:` annotation.
-- **CLI parser:** unknown flags now raise `CliError("UNKNOWN_FLAG")` with a Levenshtein-based "did you mean" suggestion instead of being silently accepted. Previously a typo like `--scop=global` ran with default values.
-- **CLI parser:** string flags (`--repo`, `--ref`, `--adapter`, `--mode`, ...) now require a value; missing values raise `CliError("MISSING_FLAG_VALUE")` naming the offending flag.
-- **CLI parser:** the literal `--` end-of-options sentinel is honored and remaining tokens are exposed via `ParsedArgs.positionalAfter`, so `skillex run x:cmd -- --foo` forwards `--foo` to the underlying script without flag interpretation.
-- **CLI:** unknown commands trigger a "did you mean" suggestion based on the same Levenshtein helper; e.g. `skillex insall git-master` now hints `Did you mean: install?`.
-- **CLI:** `parseBooleanFlag` errors now name the flag and list the accepted values: `Invalid value "maybe" for --auto-sync. Use true, false, yes, no, on, off, 1, or 0.`
-- **CLI:** `INSTALL_NO_TARGETS` (`skillex install` with no args) now prints a 3-line inline usage block instead of a single hint.
-- **CLI:** `skillex doctor` differentiates DNS, connection-refused, TLS, and timeout failures and surfaces the underlying error message instead of collapsing every failure into "GitHub API is unreachable".
 
-### Added
-- `skillex sync --exit-code` (mirrors `git diff --exit-code`): when combined with `--dry-run`, the command exits `1` whenever drift would be applied. CI scripts can use this to detect "config out of sync" without parsing diff output.
-- `suggestClosest(actual, candidates, threshold = 2)` helper in `src/output.ts`, used by the parser and dispatcher to power "did you mean" hints.
-- `skillex init --install-recommended`: after the lockfile is created, installs a curated starter pack (`commit-craft`, `code-review`, `secure-defaults`, `error-handling`, `test-discipline`) using the same progress output as `install --all`.
-- `skillex show <skill-id>`: print a skill's manifest summary plus its `SKILL.md` content from the configured sources without installing it. `--raw` prints the markdown unmodified; `--json` returns a single object.
-- `--tags <tag>` accepted as a hidden alias of `--tag` on `skillex search` so README examples that documented the plural form continue to work.
+- All remaining Portuguese user-facing strings translated to English: TUI
+  prompt label, sync symlink-fallback warnings, runner errors,
+  direct-install confirmation, non-TTY confirm prompt, filesystem path
+  errors, and Web UI labels (sidebar, catalog, skill card buttons,
+  detail page).
+- Sync warnings now route through `output.warn` instead of bare
+  `console.error` so they respect color and stream conventions.
+- New `scripts/check-language.mjs` regression guard runs as part of
+  `npm test` and fails CI if banned Portuguese tokens reappear in
+  `src/**/*.ts` or `ui/src/**/*.{vue,ts}` without an explicit
+  `i18n-allow:` annotation.
+- `toLockfileSource` boolean expression no longer contains a duplicated
+  `(label || repo === DEFAULT_REPO)` test (copy-paste artifact); behavior
+  unchanged.
+- **README** example at the search section now uses the canonical
+  `--tag <tag>` flag instead of the silently-ignored `--tags`.
+- **Web UI:** version badge in the sidebar reads the actual
+  `package.json#version` at build time via
+  `import.meta.env.VITE_SKILLEX_VERSION` instead of the previously
+  hardcoded `v0.2.4` (with a tautological ternary).
+- **Web UI:** dead `⌘K` hint badge removed (no shortcut was wired) — and
+  brought back once `Cmd+K` was actually implemented.
+- **Web UI:** misleading "Oficial" badge that every skill card displayed
+  (without any verification model) removed.
+- **Web UI:** mobile (≤680 px) sidebar no longer disappears entirely.
+- **Web UI:** `Remover` and `Carregando detalhes...` strings on the detail
+  page translated to English.
 
-### Changed
-- `skillex init` now ends with a three-line "Next steps" block recommending the no-args TUI, the `--install-recommended` starter pack, and the full catalog list. The block is suppressed when `--install-recommended` is used (the install summary stands on its own).
-- README rewritten: new "Why Skillex" section explains the value over submodules / copy-paste / per-agent config; Quick Start now leads with the no-args TUI as the primary path with the three-command chain framed as "scriptable mode."
+### Security
 
-### Fixed
-- README example at the search section now uses the canonical `--tag <tag>` flag instead of the silently-ignored `--tags`.
-- **Web UI:** version badge in the sidebar reads the actual `package.json#version` at build time via `import.meta.env.VITE_SKILLEX_VERSION` instead of the previously hardcoded `v0.2.4` (with a tautological ternary).
-- **Web UI:** dead `⌘K` hint badge removed (no shortcut was wired). Will return when the shortcut lands.
-- **Web UI:** misleading "Oficial" badge that every skill card displayed (without any verification model) removed.
-- **Web UI:** mobile (≤680 px) sidebar no longer disappears entirely. A hamburger button now opens a slide-in drawer with the same navigation; tap the backdrop or press Esc to close, and route changes auto-close it.
+- **Token confinement:** `Authorization: Bearer ${GITHUB_TOKEN}` is only
+  attached when the request host is `api.github.com`,
+  `raw.githubusercontent.com`, or any `*.githubusercontent.com` mirror.
+  Tokens are no longer leaked to third-party `--catalog-url` targets.
+- **File mode:** `~/.askillrc.json` (which may contain `githubToken`) is
+  written with mode `0o600`. Existing world-readable files are tightened
+  on next save with a one-time warning.
+- **Lockfile path safety:** `removeSkill` validates `metadata.path`
+  against the managed skills store before deleting; tampered lockfile
+  paths raise `INSTALL_PATH_UNSAFE` instead of removing arbitrary
+  directories.
+- **Symlink confinement:** sync per-skill symlinks now refuse targets
+  that resolve outside the workspace state directory.
+- **Direct-install ref:** `parseDirectGitHubRef` validates the ref segment
+  against `^[A-Za-z0-9_.\-/]+$` and rejects empty refs after `@`;
+  previously dangerous refs would land in the lockfile.
+- **Web UI avatars:** skill author avatars are now a deterministic
+  CSS-only initials chip. The previous `<img>` to `dicebear.com` is gone
+  — the UI works offline and no longer leaks page-load telemetry to a
+  third-party host.
 
-### Added
-- `src/doctor.ts` exports `runDoctorChecks(options): Promise<DoctorReport>` — the canonical six health checks (lockfile, source, adapter, GitHub reachability, token, cache freshness) reused by both the CLI and the Web UI.
-- **Web UI:** new `Doctor` route + sidebar entry that renders the structured `DoctorReport` returned by the new `GET /api/doctor` endpoint, mirroring the CLI's `skillex doctor`.
-- **Web UI:** skill avatars are now a deterministic CSS-only initials chip (hashed HSL background). The previous `<img>` to `dicebear.com` is gone — the UI works offline and no longer leaks page-load telemetry to a third-party host.
-- **`SkillManifest.category` (optional)**: catalog publishers can now declare an explicit `category` in `skill.json` or `SKILL.md` frontmatter. The Web UI prefers it over regex inference and tags inferred categories with an `(inferred)` chip so contributors can see incomplete metadata at a glance.
-- **Web UI per-card optimistic UI:** install / remove / update on a single card now shows a localized spinner inside the action button instead of freezing the whole page behind the global busy overlay. Other cards remain interactive. Backed by a new `state.busyCards: Set<string>` in the store and a `runCardAction(skillId, label, fn)` helper.
-- **Web UI first-load skeleton:** new `Skeleton.vue` component. Catalog page renders a 6-card skeleton grid until the initial `refreshAll()` resolves; Doctor page renders a 4-row skeleton during its first fetch. No more blank panels on cold loads.
-- **Web UI sidebar health dot:** the Doctor sidebar entry now shows a small colored dot reflecting the latest aggregate status (green = pass, yellow = warn, red + pulse = fail). Refreshed on initialize and after every destructive action.
-- **Web UI Cmd+K shortcut:** pressing `Cmd+K` (Mac) or `Ctrl+K` focuses the topbar search. If the user is on a non-catalog route, the shortcut navigates to the catalog first and then focuses the input. The `⌘K` keyboard hint is back on the search input now that it's actually wired.
-- **`docs/media/`** directory with a `README.md` describing how to regenerate `tui.gif`, `web-ui.png`, and `web-ui-doctor.png`. The README now has a "Demo" section that references the media via raw GitHub URLs (no binaries shipped in the npm tarball).
+### Performance
+
+- **Parallel file downloads:** `downloadSkillFiles` fetches every file in
+  a skill via `Promise.all` instead of a sequential loop. Multi-file
+  skills now scale with bandwidth instead of file count.
 
 ## [0.3.1] - 2026-04-08
 
@@ -188,7 +380,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adapter detection and managed-block sync for Copilot, Cline, Cursor, Claude, Gemini, Windsurf, Codex
 - Lockfile-based workspace state at `.agent-skills/skills.json`
 
-[Unreleased]: https://github.com/lgili/skillex/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lgili/skillex/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/lgili/skillex/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/lgili/skillex/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/lgili/skillex/compare/v0.2.5...v0.3.0
+[0.2.5]: https://github.com/lgili/skillex/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/lgili/skillex/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/lgili/skillex/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/lgili/skillex/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/lgili/skillex/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/lgili/skillex/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/lgili/skillex/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/lgili/skillex/releases/tag/v0.1.0
