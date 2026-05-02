@@ -439,10 +439,15 @@ export type SkillDownloader = (
 
 /**
  * Parsed CLI arguments.
+ *
+ * `positionalAfter` carries any tokens that follow a literal `--` end-of-options
+ * sentinel; this lets `skillex run x:cmd -- --foo --bar` forward `--foo --bar`
+ * to the underlying script without the parser interpreting them.
  */
 export interface ParsedArgs {
   command?: string | undefined;
   positionals: string[];
+  positionalAfter: string[];
   flags: Record<string, string | boolean>;
 }
 

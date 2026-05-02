@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All remaining Portuguese user-facing strings translated to English: TUI prompt label, sync symlink-fallback warnings, runner errors, direct-install confirmation, confirm prompt for non-TTY terminals, filesystem path errors, and Web UI labels (sidebar, catalog page, skill card buttons, detail page).
 - Sync warnings now route through `output.warn` instead of bare `console.error` so they respect color/stream conventions.
 - New `scripts/check-language.mjs` regression guard runs as part of `npm test` and fails CI if banned Portuguese tokens reappear in `src/**/*.ts` or `ui/src/**/*.{vue,ts}` without an explicit `i18n-allow:` annotation.
+- **CLI parser:** unknown flags now raise `CliError("UNKNOWN_FLAG")` with a Levenshtein-based "did you mean" suggestion instead of being silently accepted. Previously a typo like `--scop=global` ran with default values.
+- **CLI parser:** string flags (`--repo`, `--ref`, `--adapter`, `--mode`, ...) now require a value; missing values raise `CliError("MISSING_FLAG_VALUE")` naming the offending flag.
+- **CLI parser:** the literal `--` end-of-options sentinel is honored and remaining tokens are exposed via `ParsedArgs.positionalAfter`, so `skillex run x:cmd -- --foo` forwards `--foo` to the underlying script without flag interpretation.
+- **CLI:** unknown commands trigger a "did you mean" suggestion based on the same Levenshtein helper; e.g. `skillex insall git-master` now hints `Did you mean: install?`.
+- **CLI:** `parseBooleanFlag` errors now name the flag and list the accepted values: `Invalid value "maybe" for --auto-sync. Use true, false, yes, no, on, off, 1, or 0.`
+- **CLI:** `INSTALL_NO_TARGETS` (`skillex install` with no args) now prints a 3-line inline usage block instead of a single hint.
+- **CLI:** `skillex doctor` differentiates DNS, connection-refused, TLS, and timeout failures and surfaces the underlying error message instead of collapsing every failure into "GitHub API is unreachable".
+
+### Added
+- `skillex sync --exit-code` (mirrors `git diff --exit-code`): when combined with `--dry-run`, the command exits `1` whenever drift would be applied. CI scripts can use this to detect "config out of sync" without parsing diff output.
+- `suggestClosest(actual, candidates, threshold = 2)` helper in `src/output.ts`, used by the parser and dispatcher to power "did you mean" hints.
 
 ## [0.3.1] - 2026-04-08
 

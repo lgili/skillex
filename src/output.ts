@@ -134,3 +134,56 @@ export function clearStatus(): void {
   if (!process.stdout.isTTY) return;
   process.stdout.write("\r\x1b[K");
 }
+
+// ---------------------------------------------------------------------------
+// "Did you mean" suggestion helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the candidate closest to `actual` by Levenshtein distance, but only
+ * when the distance is at or below `threshold`. Useful for "did you mean"
+ * hints on unknown commands, flags, or config keys.
+ *
+ * @param actual - The token typed by the user.
+ * @param candidates - Known valid tokens.
+ * @param threshold - Maximum Levenshtein distance to consider (default 2).
+ * @returns The closest match within threshold, or `null`.
+ */
+export function suggestClosest(
+  actual: string,
+  candidates: readonly string[],
+  threshold = 2,
+): string | null {
+  if (!actual || candidates.length === 0) return null;
+  let best: { name: string; distance: number } | null = null;
+  for (const candidate of candidates) {
+    const distance = levenshtein(actual, candidate);
+    if (distance > threshold) continue;
+    if (!best || distance < best.distance) {
+      best = { name: candidate, distance };
+    }
+  }
+  return best ? best.name : null;
+}
+
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  const prev: number[] = new Array(b.length + 1);
+  const curr: number[] = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j += 1) prev[j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        (prev[j] ?? 0) + 1,
+        (curr[j - 1] ?? 0) + 1,
+        (prev[j - 1] ?? 0) + cost,
+      );
+    }
+    for (let j = 0; j <= b.length; j += 1) prev[j] = curr[j] ?? 0;
+  }
+  return prev[b.length] ?? 0;
+}

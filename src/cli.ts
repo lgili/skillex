@@ -20,7 +20,7 @@ import {
   updateInstalledSkills,
 } from "./install.js";
 import * as output from "./output.js";
-import { setVerbose } from "./output.js";
+import { setVerbose, suggestClosest } from "./output.js";
 import { parseSkillCommandReference, runSkillScript } from "./runner.js";
 import { runInteractiveUi } from "./ui.js";
 import { startWebUiServer } from "./web-ui.js";
@@ -30,6 +30,70 @@ import { VALID_CONFIG_KEYS, readUserConfig, writeUserConfig } from "./user-confi
 import type { UserConfig } from "./user-config.js";
 
 type CliFlags = Record<string, string | boolean>;
+
+// ---------------------------------------------------------------------------
+// Flag schema (drives parsing, validation, and "did you mean" suggestions)
+// ---------------------------------------------------------------------------
+
+/** Flags that accept a value (e.g. `--repo foo` or `--repo=foo`). */
+const STRING_FLAGS = new Set<string>([
+  "repo",
+  "ref",
+  "adapter",
+  "scope",
+  "cwd",
+  "mode",
+  "tag",
+  "tags",
+  "compatibility",
+  "agent-skills-dir",
+  "catalog-path",
+  "catalog-url",
+  "skills-dir",
+  "label",
+  "timeout",
+]);
+
+/** Flags that are pure booleans (presence = true; supports `--name=value` parsing too). */
+const BOOLEAN_FLAGS = new Set<string>([
+  "help",
+  "verbose",
+  "v",
+  "json",
+  "no-cache",
+  "all",
+  "trust",
+  "yes",
+  "global",
+  "auto-sync",
+  "dry-run",
+  "exit-code",
+]);
+
+/** Union of all flags the parser accepts anywhere in the CLI. */
+const KNOWN_FLAGS = new Set<string>([...STRING_FLAGS, ...BOOLEAN_FLAGS]);
+
+const COMMANDS = [
+  "init",
+  "list",
+  "search",
+  "install",
+  "update",
+  "remove",
+  "sync",
+  "run",
+  "browse",
+  "tui",
+  "ui",
+  "status",
+  "doctor",
+  "config",
+  "source",
+  "ls",
+  "rm",
+  "uninstall",
+  "help",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Per-command help text
@@ -135,6 +199,7 @@ Synchronize installed skills to adapter targets.
 Options:
   --adapter <id>        Target adapter (overrides saved config)
   --dry-run             Preview changes without writing to disk
+  --exit-code           With --dry-run, exit 1 when adapters would change (CI)
   --mode <symlink|copy> Sync write mode (default: symlink)
   --scope <scope>       local or global (default: local)
   --global              Shortcut for --scope global
@@ -142,6 +207,7 @@ Options:
 Example:
   skillex sync
   skillex sync --adapter cursor --dry-run
+  skillex sync --dry-run --exit-code        # CI: fail when out of sync
   skillex sync --global --adapter codex`,
 
   run: `Usage: skillex run <skill-id:command> [options]
@@ -328,10 +394,14 @@ export async function main(argv: string[]): Promise<void> {
     case "source":
       await handleSource(positionals, flags, userConfig);
       return;
-    default:
+    default: {
+      const suggestion = suggestClosest(resolvedCommand, COMMANDS);
       throw new CliError(
-        `Unknown command: ${resolvedCommand}. Run "skillex help" to see available commands.`,
+        suggestion
+          ? `Unknown command: ${resolvedCommand}. Did you mean: ${suggestion}? Run "skillex help" for the full list.`
+          : `Unknown command: ${resolvedCommand}. Run "skillex help" to see available commands.`,
       );
+    }
   }
 }
 
@@ -504,6 +574,7 @@ async function handleRemove(positionals: string[], flags: CliFlags, userConfig: 
 }
 
 async function handleSync(flags: CliFlags, userConfig: UserConfig): Promise<void> {
+  const exitCodeFlag = parseBooleanFlag(flags["exit-code"], "exit-code") ?? false;
   const result = await syncInstalledSkills(commonOptions(flags, userConfig));
 
   if (result.dryRun) {
@@ -512,6 +583,10 @@ async function handleSync(flags: CliFlags, userConfig: UserConfig): Promise<void
       output.info(`  ${entry.adapter} → ${entry.targetPath} [${entry.syncMode}]${entry.changed ? "" : " (no changes)"}`);
     }
     process.stdout.write(result.diff);
+    // Mirror `git diff --exit-code`: when --exit-code is set, drift is a non-zero exit.
+    if (exitCodeFlag && result.changed) {
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -724,17 +799,51 @@ async function handleDoctor(flags: CliFlags, userConfig: UserConfig): Promise<vo
       checks.push({
         name: "github",
         passed: false,
-        message: `GitHub API returned ${response.status}`,
+        message: `GitHub returned a server error (status ${response.status})`,
         hint: "Try again in a moment.",
       });
     }
-  } catch {
-    checks.push({
-      name: "github",
-      passed: false,
-      message: "GitHub API is unreachable",
-      hint: "Check your internet connection or proxy settings.",
-    });
+  } catch (error) {
+    const cause = (error as { cause?: { code?: string } })?.cause?.code
+      ?? (error as { code?: string })?.code
+      ?? null;
+    const message = error instanceof Error ? error.message : String(error);
+    if (cause === "EAI_AGAIN" || cause === "ENOTFOUND") {
+      checks.push({
+        name: "github",
+        passed: false,
+        message: "DNS lookup failed for api.github.com",
+        hint: `Check your network or DNS resolver. (${message})`,
+      });
+    } else if (cause === "ECONNREFUSED") {
+      checks.push({
+        name: "github",
+        passed: false,
+        message: "Connection refused by api.github.com",
+        hint: `Check your firewall or proxy. (${message})`,
+      });
+    } else if (cause === "CERT_HAS_EXPIRED" || cause === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
+      checks.push({
+        name: "github",
+        passed: false,
+        message: "TLS handshake failed",
+        hint: `Check the system clock or any TLS-intercepting proxy. (${message})`,
+      });
+    } else if (cause === "ETIMEDOUT" || (error as { name?: string })?.name === "TimeoutError") {
+      checks.push({
+        name: "github",
+        passed: false,
+        message: "Connection to api.github.com timed out",
+        hint: `Check your network connectivity. (${message})`,
+      });
+    } else {
+      checks.push({
+        name: "github",
+        passed: false,
+        message: "GitHub API is unreachable",
+        hint: `Check your internet connection or proxy settings. (${message})`,
+      });
+    }
   }
 
   // 5. GitHub token (warning only — never fails)
@@ -932,13 +1041,13 @@ function commonOptions(flags: CliFlags, userConfig: UserConfig = {}): ProjectOpt
   const skillsDir = asOptionalString(flags["skills-dir"]);
   const agentSkillsDir = asOptionalString(flags["agent-skills-dir"]);
   const adapter = asOptionalString(flags.adapter) ?? userConfig.defaultAdapter;
-  const autoSync = parseBooleanFlag(flags["auto-sync"]) ?? (userConfig.disableAutoSync ? false : undefined);
-  const dryRun = parseBooleanFlag(flags["dry-run"]);
-  const trust = parseBooleanFlag(flags.trust);
-  const yes = parseBooleanFlag(flags.yes);
+  const autoSync = parseBooleanFlag(flags["auto-sync"], "auto-sync") ?? (userConfig.disableAutoSync ? false : undefined);
+  const dryRun = parseBooleanFlag(flags["dry-run"], "dry-run");
+  const trust = parseBooleanFlag(flags.trust, "trust");
+  const yes = parseBooleanFlag(flags.yes, "yes");
   const mode = parseSyncMode(asOptionalString(flags.mode));
   const timeout = parsePositiveInt(asOptionalString(flags.timeout));
-  const noCache = parseBooleanFlag(flags["no-cache"]);
+  const noCache = parseBooleanFlag(flags["no-cache"], "no-cache");
 
   if (repo) options.repo = repo;
   if (ref) options.ref = ref;
@@ -973,7 +1082,7 @@ function cacheOptions(opts: ProjectOptions): { cacheDir: string; noCache?: boole
 
 function resolveScope(flags: CliFlags): InstallScope {
   const rawScope = asOptionalString(flags.scope);
-  const globalFlag = parseBooleanFlag(flags.global);
+  const globalFlag = parseBooleanFlag(flags.global, "global");
 
   if (rawScope && rawScope !== "local" && rawScope !== "global") {
     throw new CliError(`Invalid scope: ${rawScope}. Use "local" or "global".`, "INVALID_SCOPE");
@@ -987,14 +1096,37 @@ function resolveScope(flags: CliFlags): InstallScope {
   return (rawScope as InstallScope | undefined) || DEFAULT_INSTALL_SCOPE;
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+/**
+ * Parses argv into a typed `ParsedArgs` shape with strict validation:
+ *
+ * - Unknown flags raise `UNKNOWN_FLAG` with a "did you mean" suggestion.
+ * - Boolean flags (`BOOLEAN_FLAGS`) accept presence-only or `--flag=value` forms.
+ * - String flags (`STRING_FLAGS`) require a value via `--flag=value` or
+ *   `--flag value`. Missing values raise `MISSING_FLAG_VALUE`.
+ * - The literal `--` token marks end-of-options; remaining tokens become
+ *   `positionalAfter` and are forwarded to handlers (used by `run` to pass
+ *   arguments to the underlying script without flag interpretation).
+ */
+export function parseArgs(argv: string[]): ParsedArgs {
   const flags: CliFlags = {};
   const positionals: string[] = [];
+  const positionalAfter: string[] = [];
   let command: string | undefined;
+  let endOfOptions = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === undefined) continue;
+
+    if (endOfOptions) {
+      positionalAfter.push(token);
+      continue;
+    }
+
+    if (token === "--") {
+      endOfOptions = true;
+      continue;
+    }
 
     if (!command && !token.startsWith("-")) {
       command = token;
@@ -1007,19 +1139,41 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
 
     if (token.startsWith("--")) {
-      const [rawKey, inlineValue] = token.slice(2).split("=", 2);
+      const eq = token.indexOf("=");
+      const rawKey = eq === -1 ? token.slice(2) : token.slice(2, eq);
+      const inlineValue = eq === -1 ? undefined : token.slice(eq + 1);
       if (!rawKey) continue;
+
+      if (!KNOWN_FLAGS.has(rawKey)) {
+        const suggestion = suggestClosest(rawKey, [...KNOWN_FLAGS]);
+        throw new CliError(
+          suggestion
+            ? `Unknown flag: --${rawKey}. Did you mean --${suggestion}?`
+            : `Unknown flag: --${rawKey}. Run 'skillex --help' to list flags.`,
+          "UNKNOWN_FLAG",
+        );
+      }
+
       if (inlineValue !== undefined) {
         flags[rawKey] = inlineValue;
         continue;
       }
 
-      const next = argv[index + 1];
-      if (!next || next.startsWith("-")) {
+      // Boolean flag without an inline value: presence = true.
+      if (BOOLEAN_FLAGS.has(rawKey)) {
         flags[rawKey] = true;
         continue;
       }
 
+      // String flag: require a following value that is not another flag and not the
+      // end-of-options sentinel.
+      const next = argv[index + 1];
+      if (next === undefined || next === "--" || next.startsWith("-")) {
+        throw new CliError(
+          `Missing value for --${rawKey}. Pass --${rawKey} <value> or --${rawKey}=<value>.`,
+          "MISSING_FLAG_VALUE",
+        );
+      }
       flags[rawKey] = next;
       index += 1;
       continue;
@@ -1028,7 +1182,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     positionals.push(token);
   }
 
-  return { command, positionals, flags };
+  return { command, positionals, positionalAfter, flags };
 }
 
 function printHelp(): void {
@@ -1089,13 +1243,17 @@ function truncate(value: string, maxLength: number): string {
   return `${value.slice(0, maxLength - 3)}...`;
 }
 
-function parseBooleanFlag(value: string | boolean | undefined): boolean | undefined {
+function parseBooleanFlag(value: string | boolean | undefined, flagName?: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (value === true) return true;
   const normalized = String(value).trim().toLowerCase();
   if (["true", "1", "yes", "on"].includes(normalized)) return true;
   if (["false", "0", "no", "off"].includes(normalized)) return false;
-  throw new CliError(`Invalid boolean value: ${value}`, "INVALID_BOOLEAN_FLAG");
+  const target = flagName ? `--${flagName}` : "boolean flag";
+  throw new CliError(
+    `Invalid value "${value}" for ${target}. Use true, false, yes, no, on, off, 1, or 0.`,
+    "INVALID_BOOLEAN_FLAG",
+  );
 }
 
 function parsePositiveInt(value: string | undefined): number | undefined {

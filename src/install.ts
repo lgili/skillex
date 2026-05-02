@@ -231,7 +231,15 @@ export async function installSkills(
         installedSkills.push(skill);
       }
     } else if (!directRefs.length) {
-      throw new InstallError("Provide at least one skill-id, use --all, or pass owner/repo[@ref].", "INSTALL_REQUIRES_SKILL");
+      throw new InstallError(
+        [
+          "No install target provided. Pick one of:",
+          "  • skillex install <skill-id> [<skill-id> ...]   from a configured catalog source",
+          "  • skillex install --all                          install every skill in the catalog",
+          "  • skillex install owner/repo[@ref] --trust       install directly from a GitHub repo",
+        ].join("\n"),
+        "INSTALL_REQUIRES_SKILL",
+      );
     }
 
     for (const directRef of directRefs) {
