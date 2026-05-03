@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-02
+
+A developer-experience patch on top of 0.4.0. Same runtime behaviour for end
+users; one-command Web UI dev workflow for contributors.
+
 ### Added
 - **`npm run dev`** — one-command dev orchestrator (`scripts/dev.mjs`). Spawns the Skillex backend with `--no-open --port 4174`, parses the token from the first `Skillex Web UI running at <url>` line, spawns the Vite dev server on port 4175 with `VITE_SKILLEX_BACKEND` pre-wired, and opens the browser at `http://127.0.0.1:4175?token=<token>` automatically. Ctrl+C cleanly tears both processes down.
 - New convenience npm scripts:
@@ -398,7 +403,8 @@ Test count went from 63 → 88 (no regressions).
 - Adapter detection and managed-block sync for Copilot, Cline, Cursor, Claude, Gemini, Windsurf, Codex
 - Lockfile-based workspace state at `.agent-skills/skills.json`
 
-[Unreleased]: https://github.com/lgili/skillex/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/lgili/skillex/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/lgili/skillex/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/lgili/skillex/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/lgili/skillex/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/lgili/skillex/compare/v0.2.5...v0.3.0
