@@ -1,7 +1,6 @@
 ---
-name: "Safety Circuit Appraisal"
-description: "Performs a safety circuit appraisal based on schematics and Bill of Materials (BOM). This skill orchestrates other skills to analyze potential failure modes (short/open circuits) under single-fault conditions and evaluates compliance with safety standards. Activates when the user asks to perform a 'safety circuit appraisal', 'single fault analysis', or 'evaluate circuit safety for certification'."
-tags: "electronics,safety,hardware,FMEA,certification,schematic"
+name: safety-circuit-appraisal
+description: Pre-certification safety circuit appraisal for electronic hardware: parses a schematic + BOM, identifies safety-critical components and isolation barriers, performs single-fault analysis (open / short) on each, checks component ratings against the requirements of a safety standard (IEC 62368-1 by default; IEC 61010, IEC 60601-1, UL 60950 on request), and produces a structured Markdown report with recommendations. Orchestrates `pdf-reader`, `schematic-intelligence`, `power-electronics`, `circuit-solver`, and `datasheet-intelligence`. Trigger for asks like "safety circuit appraisal", "single fault analysis", "SFA", "FMEA on this circuit", "evaluate circuit safety", "IEC 62368", "IEC 61010", "pre-compliance review", "isolation barrier analysis", or "certification readiness".
 ---
 
 # Safety Circuit Appraisal
@@ -90,6 +89,27 @@ This skill guides an AI agent to perform a comprehensive Safety Circuit Appraisa
 - Do not declare a product "safe" or "certified." This skill provides an appraisal and identifies potential non-compliances for further investigation.
 - Do not analyze for issues beyond single-fault conditions (e.g., multiple simultaneous faults).
 - Do not perform analysis without both a schematic and a BOM.
+
+## When NOT to use this skill
+
+This skill is heavyweight and orchestrates several others. Defer to a more
+focused skill when the request is narrower:
+
+- The user just wants to **read a schematic PDF** with no compliance angle
+  → `pdf-reader` + `schematic-intelligence` directly.
+- The user wants to **look up a single component's ratings** from a
+  datasheet → `datasheet-intelligence`.
+- The user wants to **simulate or solve a circuit** numerically (steady
+  state, transients, frequency response) → `circuit-solver`,
+  `power-electronics`, or `simulation-verification`.
+- The user wants **functional safety in software** (ISO 26262 SW units,
+  MISRA-C, freedom-from-interference at the code level) — that's a
+  different domain than electronic hardware single-fault analysis.
+- The user is asking about **EMC pre-compliance, thermal margin, or
+  mechanical enclosure ratings** — those are separate compliance
+  exercises that this skill does not cover.
+- **You don't have both the schematic and the BOM.** Ask for the missing
+  artifact first instead of running the workflow with assumptions.
 
 ## Output Template
 

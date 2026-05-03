@@ -71,6 +71,27 @@ security, and maintainability without blocking progress on style opinions.
 - Review while ignoring the PR description and the problem it solves.
 - Nit-pick variable names when they are clear and consistent with the rest of the file.
 
+## When NOT to use this skill
+
+Defer to a more focused skill when the request is narrower than a full
+code review:
+
+- **Security-only audit / threat-model** of changes → `secure-defaults`
+  has the deeper checklist for auth, input handling, secrets, and
+  dependency hygiene.
+- **Test-coverage / test-design audit** → `test-discipline` is the
+  authoritative guide on what to test, edge-case enumeration, and
+  fragile-test detection.
+- **Error-handling discipline** (retry, circuit-breaker, Result-style
+  returns, error messages) → `error-handling`.
+- **Commit message or PR description** quality → `commit-craft`.
+- **Language-specific findings** (TS strict mode, Python typing, C
+  undefined behavior, C++ ownership) → `typescript-pro`, `python-pro`,
+  `c-pro`, `cpp-pro` respectively. Code-review covers the *process*;
+  the language skills cover the *idiomatic findings*.
+- **You don't have the diff yet** — ask the user for the PR URL, file
+  paths, or the diff itself before applying the workflow.
+
 ## Output Template
 
 For code review tasks, provide:

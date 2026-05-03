@@ -1,6 +1,7 @@
 ---
 name: cpp-pro
 description: Modern C++ (C++23/C++20) specialist for designing, implementing, reviewing, and modernizing performance-sensitive C++ across libraries, CLIs, services, and systems code. Use when working with `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.h`, `CMakeLists.txt`, `CMakePresets.json`, `vcpkg.json`, `conanfile.txt`, `conanfile.py`, or requests involving RAII, concepts, ranges, coroutines, template metaprogramming, concurrency, sanitizers, GoogleTest, Catch2, `clang-tidy`, profiling, ABI boundaries, or legacy C++ migration. Trigger for asks like "cpp pro", "modernizar c++", "cmake", "gtest", "catch2", "clang-tidy", "sanitizer", "performance c++", "concepts", "concurrency", or "refatorar c++ legado".
+paths: "**/*.cpp, **/*.cc, **/*.cxx, **/*.hpp, **/*.hh, **/*.h, CMakeLists.txt, CMakePresets.json, vcpkg.json, conanfile.txt, conanfile.py"
 ---
 
 # C++ Pro
@@ -102,6 +103,25 @@ Default stance:
 - Put `using namespace std` in headers.
 - Ship performance claims without profiling, benchmarking, or at least a concrete measurement plan.
 - Rewrite large legacy areas all at once when an incremental migration path exists.
+
+## When NOT to use this skill
+
+Defer to a more focused skill when the task is dominated by one of these
+concerns:
+
+- **C without C++** (no classes, RAII, templates) → `c-pro`. The two
+  languages share syntax but the idiomatic toolboxes are different.
+- **Power-electronics simulator math** (MNA, control loops, magnetics,
+  numerical solvers) → `circuit-solver`, `control-loop`, `solver-numerics`,
+  `magnetic-components`. Cpp-pro covers how the C++ should look; those
+  cover what it should compute.
+- **Security audit / threat-model of a C++ codebase** → `secure-defaults`
+  for the threat model; cpp-pro for the C++-specific fixes.
+- **Test design / coverage strategy** → `test-discipline`. Cpp-pro covers
+  GoogleTest / Catch2 mechanics; `test-discipline` covers what to test.
+- **Code review of a PR** → `code-review`. Use cpp-pro to source the
+  C++-specific findings.
+- **Commit message or PR description** → `commit-craft`.
 
 ## Output Template
 

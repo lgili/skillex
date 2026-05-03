@@ -1,6 +1,7 @@
 ---
 name: python-pro
 description: Senior Python engineering specialist for designing, implementing, reviewing, and refactoring structured, testable, production-grade Python across libraries, CLIs, APIs, workers, async services, and data pipelines. Use when working with `.py` files, `pyproject.toml`, `requirements*.txt`, `uv.lock`, pytest suites, typing issues, package design, concurrency choices, or Python quality gates. Trigger for asks like "python pro", "melhorar python", "refatorar python", "organizar projeto python", "strict typing python", "pytest", "mypy", "pyright", "fastapi", "cli python", or "pipeline python".
+paths: "**/*.py, pyproject.toml, requirements*.txt, uv.lock, setup.py, setup.cfg"
 ---
 
 # Python Pro
@@ -102,6 +103,26 @@ Default stance:
 - Mix sync and async code paths casually in the same service boundary.
 - Add dependencies without a concrete operational or developer-productivity reason.
 - Micro-optimize performance before measuring the bottleneck.
+
+## When NOT to use this skill
+
+Defer to a more specialized skill when the task is dominated by one of
+these concerns:
+
+- **Machine-learning model code (training loops, feature engineering,
+  experiment design, evaluation)** → `senior-data-scientist`. Python-pro
+  covers the language; the data-science skill covers the modelling
+  workflow.
+- **Data pipeline / ETL / orchestration (Airflow, Prefect, dbt, Spark,
+  warehouse modelling)** → `senior-data-engineer`.
+- **Security-first patterns (auth, secrets, input validation, dependency
+  audits)** → `secure-defaults`.
+- **Error-handling discipline (retries, circuit breakers, Result-style
+  returns)** → `error-handling`. Python-pro covers typed exception
+  hierarchies; `error-handling` covers the cross-cutting strategy.
+- **Test design or coverage strategy** → `test-discipline`.
+- **Code review of a PR** → `code-review`.
+- **Commit message or PR description** → `commit-craft`.
 
 ## Output Template
 

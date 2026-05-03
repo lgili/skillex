@@ -1,8 +1,9 @@
 {
   "id": "c-pro",
   "name": "C Pro",
-  "version": "0.1.0",
-  "description": "Modern C specialist for designing, implementing, reviewing, and modernizing performance-sensitive C across libraries, CLIs, services, and systems code.",
+  "version": "1.0.0",
+  "category": "code",
+  "description": "Modern C specialist for designing, implementing, reviewing, and modernizing performance-sensitive C across libraries, CLIs, services, embedded firmware, and systems code. Covers undefined behavior, ownership and error contracts, sanitizer/static-analysis workflows, and C99/C11/C17/C23 idioms.",
   "author": "lgili",
   "tags": [
     "c",

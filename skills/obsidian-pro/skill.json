@@ -1,8 +1,9 @@
 {
   "id": "obsidian-pro",
   "name": "Obsidian Pro",
-  "version": "0.1.0",
-  "description": "A powerful skill to help you use Obsidian. It helps you to manage your notes, tasks, and knowledge. Activates when you say 'obsidian', 'obsidian pro', or 'obsidian skill'.",
+  "version": "0.2.0",
+  "category": "tools",
+  "description": "Obsidian power-user specialist for designing vault structures, writing Dataview queries, building Templater templates, frontmatter properties, dashboards, and automating PKM workflows. Triggers on Obsidian-specific tasks: dataview, templater, vault structure, frontmatter, dashboards, zettelkasten / second-brain workflows.",
   "author": "lgili",
   "tags": [
     "obsidian",

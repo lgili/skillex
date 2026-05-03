@@ -1,6 +1,7 @@
 ---
 name: typescript-pro
 description: Senior TypeScript engineering specialist for designing, implementing, reviewing, and refactoring type-safe, production-grade TypeScript code with strict mode, modern tooling, and Node.js or browser runtimes. Use when working with .ts/.tsx files, tsconfig.json, package.json, vitest/jest suites, async services, library design, or performance-sensitive code. Trigger for asks like "typescript pro", "strict typescript", "fix type errors", "design types for this", "refactor to typescript", "improve type safety", "type this correctly", "add generics", or any task involving TypeScript architecture, strict mode violations, or quality.
+paths: "**/*.ts, **/*.tsx, tsconfig.json, package.json"
 ---
 
 # TypeScript Pro
@@ -86,6 +87,24 @@ clean module design, strong test strategy, and a reliable build and delivery pip
 - Use `namespace` instead of ES modules for new code.
 - Add `@types/*` packages for modules that already ship their own `.d.ts` declarations.
 - Ship code with `noEmit` violations, unused imports, unreachable code, or unresolved type errors.
+
+## When NOT to use this skill
+
+Defer when the task is dominated by another concern:
+
+- **Security audit / threat-model** of a TS codebase → `secure-defaults`
+  for the threat model and patterns; TS-pro for the type-system fixes.
+- **Test design / coverage strategy** (what to test, not how to type the
+  test harness) → `test-discipline`.
+- **Error-handling patterns** (Result vs throw, retry, circuit-breaker) →
+  `error-handling`. TS-pro covers typed error shapes; `error-handling`
+  covers the discipline.
+- **Code review of an existing PR** → `code-review` for the review
+  process; TS-pro for the TS-specific findings.
+- **Commit message or PR description** → `commit-craft`.
+- **Backend data-pipeline work in TypeScript** that's really about ETL
+  flow / orchestration → `senior-data-engineer`. TS-pro covers the code;
+  the data skill covers the pipeline shape.
 
 ## Output Template
 

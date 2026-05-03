@@ -1,7 +1,7 @@
 {
   "id": "python-pro",
   "name": "Python Pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Senior Python engineering for architecture, typing, testing, reliability, delivery, and migration work across libraries, CLIs, APIs, workers, async services, and data pipelines.",
   "author": "lgili",
   "tags": [

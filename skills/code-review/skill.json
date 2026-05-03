@@ -1,7 +1,7 @@
 {
   "id": "code-review",
   "name": "Code Review",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Systematic code review methodology: correctness, security, test coverage, maintainability checks, and structured feedback with blocker/suggestion/nit levels.",
   "author": "lgili",
   "tags": [

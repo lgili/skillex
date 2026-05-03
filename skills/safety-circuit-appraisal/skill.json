@@ -1,8 +1,9 @@
 {
   "id": "safety-circuit-appraisal",
   "name": "Safety Circuit Appraisal",
-  "version": "0.1.0",
-  "description": "Performs a safety circuit appraisal based on schematics and Bill of Materials (BOM). This skill orchestrates other skills to analyze potential failure modes (short/open circuits) under single-fault conditions and evaluates compliance with safety standards. Activates when the user asks to perform a 'safety circuit appraisal', 'single fault analysis', or 'evaluate circuit safety for certification'.",
+  "version": "0.2.0",
+  "category": "engineering",
+  "description": "Pre-certification safety circuit appraisal for electronic hardware: parses schematic + BOM, identifies safety-critical components and isolation barriers, performs single-fault analysis (open/short) on each, checks ratings against IEC 62368-1 / 61010 / 60601-1 / UL 60950, and produces a structured report with recommendations. Orchestrates pdf-reader, schematic-intelligence, power-electronics, circuit-solver, and datasheet-intelligence.",
   "author": "lgili",
   "tags": [
     "electronics",

@@ -1,7 +1,7 @@
 {
   "id": "typescript-pro",
   "name": "TypeScript Pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Senior TypeScript engineering: strict mode, type design, generics, async patterns, ESM module boundaries, and production tooling with tsc, vitest, eslint, and prettier.",
   "author": "lgili",
   "tags": [
